@@ -30,16 +30,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-#include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
-
 #include <string>
 #include <vector>
-
 #include <boost/range/adaptor/indexed.hpp>
-
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
-
 #include <hsrb_gripper_controller/hrh_gripper_apply_force_action.hpp>
+#include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
+#include <lifecycle_msgs/msg/state.hpp>
+#include <lifecycle_msgs/msg/transition.hpp>
+#include <hsrb_gripper_controller/hrh_gripper_action.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_grasp_action.hpp>
 
@@ -59,7 +58,7 @@ bool GetIndex(const std::vector<TYPE>& interfaces, const std::string& name, uint
 template <typename TYPE>
 bool GetPositionIndex(const std::vector<TYPE>& interfaces, const std::string& joint_name, uint32_t& index_out_) {
   for (const auto& interface : interfaces | boost::adaptors::indexed()) {
-    if (interface.value().get_name() == joint_name &&
+    if (interface.value().get_prefix_name() == joint_name &&
         interface.value().get_interface_name() == hardware_interface::HW_IF_POSITION) {
       index_out_ = interface.index();
       return true;
@@ -74,8 +73,12 @@ namespace hsrb_gripper_controller {
 
 HrhGripperController::HrhGripperController() {}
 
-controller_interface::return_type HrhGripperController::init(const std::string& controller_name) {
-  const auto ret = ControllerInterface::init(controller_name);
+controller_interface::return_type HrhGripperController::init(const std::string& controller_name,
+                                                             const std::string& namespace_,
+                                                             const rclcpp::NodeOptions& node_options) {
+  // NOTE: no member
+  // node_options.enable_logger_service(true);
+  const auto ret = ControllerInterface::init(controller_name, namespace_, node_options);
   if (ret != controller_interface::return_type::OK) {
     return ret;
   }
@@ -88,10 +91,10 @@ controller_interface::return_type HrhGripperController::init(const std::string& 
 }
 
 bool HrhGripperController::InitImpl() {
-  std::vector<std::string> joint_names = GetParameter(
-      get_node(), "joints", std::vector<std::string>({"hand_motor_joint"}));
+  std::vector<std::string> joint_names =
+      GetParameter(get_node(), "joints", std::vector<std::string>({ "hand_motor_joint" }));
   if (joint_names.size() != 1) {
-    RCLCPP_FATAL_STREAM(node_->get_logger(), "The size of joints must be one.");
+    //  RCLCPP_FATAL_STREAM(node_->get_logger(), "The size of joints must be one.");
     return false;
   }
   joint_name_ = joint_names.at(0);
@@ -124,7 +127,8 @@ controller_interface::InterfaceConfiguration HrhGripperController::state_interfa
   return conf;
 }
 
-controller_interface::return_type HrhGripperController::update() {
+controller_interface::return_type HrhGripperController::update(const rclcpp::Time& time,
+                                                               const rclcpp::Duration& period) {
   if (active_action_) {
     active_action_->Update(get_node()->get_clock()->now());
   }
@@ -134,9 +138,13 @@ controller_interface::return_type HrhGripperController::update() {
   return controller_interface::return_type::OK;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-HrhGripperController::on_configure(const rclcpp_lifecycle::State& previous_state) {
-  // 各アクションの初期化
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_init() {
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_configure(
+    const rclcpp_lifecycle::State& previous_state) {
+  // Initialization of each action
   actions_.push_back(std::make_shared<HrhGripperFollowTrajectoryAction>(this));
   actions_.push_back(std::make_shared<HrhGripperGraspAction>(this));
   actions_.push_back(std::make_shared<HrhGripperApplyForceAction>(this));
@@ -148,9 +156,9 @@ HrhGripperController::on_configure(const rclcpp_lifecycle::State& previous_state
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-HrhGripperController::on_activate(const rclcpp_lifecycle::State& previous_state) {
-  // assign_interfaces => activateの順なので，もう使える
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_activate(
+    const rclcpp_lifecycle::State& previous_state) {
+  // Assign_interfaces => Activate is in the order, so it can be used already
   for (const auto& state_interface : state_interfaces_) {
     if (state_interface.get_interface_name() == "current_drive_mode") {
       command_control_mode_.initRT(static_cast<int32_t>(state_interface.get_value()));
@@ -170,16 +178,21 @@ HrhGripperController::on_activate(const rclcpp_lifecycle::State& previous_state)
       !GetIndex(command_interfaces_, "command_drive_mode", command_drive_mode_index_)) {
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
   }
+  for (auto& action : actions_) {
+    if (!action->Activate()) {
+      return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+    }
+  }
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-HrhGripperController::on_deactivate(const rclcpp_lifecycle::State& previous_state) {
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_deactivate(
+    const rclcpp_lifecycle::State& previous_state) {
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 bool HrhGripperController::IsAcceptable() {
-  return get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
+  return get_node()->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
 }
 
 void HrhGripperController::PreemptActiveGoal() {
@@ -196,9 +209,7 @@ double HrhGripperController::GetCurrentVelocity() const {
   return state_interfaces_[current_velocity_index_].get_value();
 }
 
-double HrhGripperController::GetCurrentTorque() const {
-  return state_interfaces_[current_effort_index_].get_value();
-}
+double HrhGripperController::GetCurrentTorque() const { return state_interfaces_[current_effort_index_].get_value(); }
 
 bool HrhGripperController::GetCurrentGraspingFlag() const {
   return state_interfaces_[current_grasping_flag_index_].get_value() > 0.0;
@@ -234,5 +245,4 @@ void HrhGripperController::ChangeControlMode(IHrhGripperAction::Ptr action) {
 
 #include "pluginlib/class_list_macros.hpp"
 
-PLUGINLIB_EXPORT_CLASS(hsrb_gripper_controller::HrhGripperController,
-                       controller_interface::ControllerInterface)
+PLUGINLIB_EXPORT_CLASS(hsrb_gripper_controller::HrhGripperController, controller_interface::ControllerInterface)

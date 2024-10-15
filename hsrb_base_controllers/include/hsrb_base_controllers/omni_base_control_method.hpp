@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_control_method.hpp
+/// @brief Omnidistant bogie control mode class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROL_METHOD_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROL_METHOD_HPP_
 
@@ -51,86 +53,96 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// 台車の制御手段インターフェースクラス
+/// Bogie control means interface class
 class IBaseControlMethod : private boost::noncopyable {
  public:
   using Ptr = std::shared_ptr<IBaseControlMethod>;
 
   virtual ~IBaseControlMethod() {}
-  // 初期化する
+  // Initialize
   virtual void Activate() = 0;
 };
 
 
-/// 台車速度追従
+/// Bogie speed tracking
 class OmniBaseVelocityControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseVelocityControl>;
 
-  explicit OmniBaseVelocityControl(const rclcpp::Node::SharedPtr& node);
+  explicit OmniBaseVelocityControl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   virtual ~OmniBaseVelocityControl() = default;
-  // 初期化する
+  // Initialize
   void Activate() override;
 
-  // 指令速度を取得する
+  // Get command speed
   Eigen::Vector3d GetOutputVelocity();
-  // 指令速度を更新する
+  // Update the command speed
   void UpdateCommandVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg);
 
  private:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
 
-  // 排他制御
+  // Exclusive control
   std::mutex command_mutex_;
-  // 指令速度
+  // Instruction speed
   Eigen::Vector3d command_velocity_;
-  // 最後に速度指令値を受け取った時間
+  // The last time I received the speed command value
   rclcpp::Time last_velocity_subscribed_time_;
-  // 速度指令値途絶判定時間
+  // Speed ​​command value cut judgment time
   double command_timeout_;
 };
 
 
-/// 台車軌道追従
+/// Trolley track follow -up
 class OmniBaseTrajectoryControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseTrajectoryControl>;
 
-  explicit OmniBaseTrajectoryControl(const rclcpp::Node::SharedPtr& node, const std::vector<std::string>& cordinates);
+  explicit OmniBaseTrajectoryControl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
+                                     const std::vector<std::string>& cordinates);
   virtual ~OmniBaseTrajectoryControl() = default;
-  // 初期化する
+  // Initialize
   void Activate() override;
 
-  // 指令速度を取得する
+  // Get command speed
   Eigen::Vector3d GetOutputVelocity(const ControllerState& base_state);
-  // 追従中の軌道を更新する，軌道が存在するならtrueを返す
+  // Update the track during follow -up, return True if there is a trajectory
   bool UpdateActiveTrajectory();
-  // 軌道追従の目標状態を取得
+  // Get the target status of track tracking
   bool SampleDesiredState(const rclcpp::Time& time,
                           const std::vector<double>& current_positions,
                           const std::vector<double>& current_velocities,
                           trajectory_msgs::msg::JointTrajectoryPoint& desired_state,
                           bool& before_last_point,
                           double& time_from_point);
-  // 入力軌道指令を検証する
+  // Verify the input orbit command
   bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) const;
-  // 追従軌道を更新する
+  // Update the track
   void AcceptTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
                         const Eigen::Vector3d& base_positions);
-  // 条件を満たしていたら軌道追従を終了させる
+  // If you meet the conditions, end the track follow -up
   void TerminateControl(const rclcpp::Time& time, const ControllerState& base_state);
-  // 現在追従中の軌道をリセットする
+  // Reset the trajectory currently following
   void ResetCurrentTrajectory();
 
  private:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
 
-  // 制御のフィードバックゲイン
+  // Control feedback gain
   Eigen::Vector3d feedback_gain_;
-  // 台車の座標軸名
+  // Bogie coordinate axis name
   std::vector<std::string> coordinate_names_;
-  // 軌道追従完了を判断する速度の閾値
+  // Speed ​​threshold for judging the completion of track follow -up
   double stop_velocity_threshold_;
+  // Whether to connect from the existing desired when a new orbit comes
+  // Variables and behaviors are tailored to JointTrajectoryController
+  bool open_loop_control_;
+  // Finally sampled state
+  trajectory_msgs::msg::JointTrajectoryPoint last_command_state_;
+  // Last_command_state_ is a value
+  // It is correct to put the current price at the time of Activate, like JointtrajectoryController
+  // Since the change part is wider, it is implemented by flag management.
+  bool has_last_command_state_;
 
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_ = nullptr;
   std::shared_ptr<joint_trajectory_controller::Trajectory> trajectory_ptr_ = nullptr;

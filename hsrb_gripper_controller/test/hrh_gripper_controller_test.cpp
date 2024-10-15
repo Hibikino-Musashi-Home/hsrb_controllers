@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 TOYOTA MOTOR CORPORATION
+Copyright (c) 2022 TOYOTA MOTOR CORPORATION
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,13 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-#include <gtest/gtest.h>
+/// @file hrh_gripper_controller-test.cpp
+/// @brief HRH Glippa Controller test and check if the interrupt of action works
 
 #include <control_msgs/action/follow_joint_trajectory.hpp>
-
+#include <gtest/gtest.h>
+#include <lifecycle_msgs/msg/state.hpp>
+#include <lifecycle_msgs/msg/transition.hpp>
 #include <hsrb_servomotor_protocol/exxx_common.hpp>
 #include <tmc_control_msgs/action/gripper_apply_effort.hpp>
 
@@ -48,39 +51,40 @@ class GripperControllerTest : public ::testing::Test {
     controller_ = std::make_shared<TestableHrhGripperController>();
     controller_node_ = controller_->get_node();
 
-    controller_node_->declare_parameter<std::vector<std::string>>("joints", {kHandJointName});
-    // WaitForでupdateが複数回呼ばれる影響を消すために，igainをゼロにしておく
+    controller_node_->declare_parameter<std::vector<std::string>>("joints", { kHandJointName });
+    // Zero Igain to eliminate the effect of Update called multiple times in Waitfor
     controller_node_->declare_parameter<double>("force_control_igain", 0.0);
     EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
 
     hardware_ = std::make_shared<HardwareStub>(kHandJointName);
     controller_->assign_interfaces(std::move(hardware_->command_interfaces), std::move(hardware_->state_interfaces));
-    EXPECT_EQ(controller_->configure().label(), controller_interface::state_names::INACTIVE);
-    EXPECT_EQ(controller_->activate().label(), controller_interface::state_names::ACTIVE);
+    EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
     client_node_ = rclcpp::Node::make_shared(kClientNodeName);
-
     trajectory_publisher_ = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
         std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
     apply_force_action_client_ = rclcpp_action::create_client<ApplayEffortAction>(
         client_node_, std::string(kControllerNodeName) + "/apply_force");
-    grasp_action_client_ = rclcpp_action::create_client<ApplayEffortAction>(
-        client_node_, std::string(kControllerNodeName) + "/grasp");
+    grasp_action_client_ =
+        rclcpp_action::create_client<ApplayEffortAction>(client_node_, std::string(kControllerNodeName) + "/grasp");
     follow_trajectory_action_client_ = rclcpp_action::create_client<FollowTrajectoryAction>(
         client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
 
     EXPECT_TRUE(apply_force_action_client_->wait_for_action_server());
     EXPECT_TRUE(grasp_action_client_->wait_for_action_server());
     EXPECT_TRUE(follow_trajectory_action_client_->wait_for_action_server());
+    executor_.add_node(controller_->get_node()->get_node_base_interface());
   }
 
  protected:
   TestableHrhGripperController::Ptr controller_;
-  rclcpp::Node::SharedPtr controller_node_;
+  std::shared_ptr<rclcpp_lifecycle::LifecycleNode> controller_node_;
   HardwareStub::Ptr hardware_;
 
   rclcpp::Node::SharedPtr client_node_;
+  rclcpp::executors::SingleThreadedExecutor executor_;
 
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_publisher_;
 
@@ -93,9 +97,9 @@ class GripperControllerTest : public ::testing::Test {
 
   void SpinOnce(rclcpp::WallRate& rate) {
     rate.sleep();
-    rclcpp::spin_some(client_node_);
-    rclcpp::spin_some(controller_node_);
-    EXPECT_EQ(controller_->update(), controller_interface::return_type::OK);
+    executor_.spin_some();
+    EXPECT_EQ(controller_->update(controller_->get_node()->now(), rclcpp::Duration::from_seconds(0.1)),
+              controller_interface::return_type::OK);
   }
 
   template <typename FutureT>
@@ -114,10 +118,10 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // apply_force開始を待つ
+    // Apply_force Wait for the start
     while (rclcpp::ok()) {
       SpinOnce(rate);
-      // 0.1 * -1.0が想定指令値
+      // 0.1 * -1.0 is the expected command value
       if (std::abs(hardware_->position->command() + 0.1) < kEpsilon) {
         break;
       }
@@ -130,7 +134,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   std::shared_ptr<rclcpp_action::ClientGoalHandle<FollowTrajectoryAction>> StartFollowTrajectoryAction() {
-    // 軌道追従中に偏差過大でabortedにならないように，軌道のゴール位置に近い値を入れておく
+    // Put a value close to the goal position of the orbital so that you do not become an ABORTED due to excessive deviation during tracking
     hardware_->position->set_current(0.96);
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -140,7 +144,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // 追従開始を待つ
+    // Wait for the start of follow -up
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->position->command() > 0.96) {
@@ -162,7 +166,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // 握り込み開始を待つ
+    // Wait for the start of grip
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->grasping_flag->bool_command()) {
@@ -177,14 +181,14 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void SendTrajectoryTopic() {
-    // 軌道追従中に偏差過大でabortedにならないように，軌道のゴール位置に近い値を入れておく
+    // Put a value close to the goal position of the orbital so that you do not become an ABORTED due to excessive deviation during tracking
     hardware_->position->set_current(1.46);
 
     auto trajectory = MakeTrajectory();
     trajectory.points[0].positions[0] = 1.5;
     trajectory_publisher_->publish(trajectory);
 
-    // 追従開始を待つ
+    // Wait for the start of follow -up
     rclcpp::WallRate rate(100.0);
     while (rclcpp::ok()) {
       SpinOnce(rate);
@@ -207,24 +211,24 @@ class GripperControllerTest : public ::testing::Test {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2050));
 
-    // 目標力とローパス後の力が同じ値になるようにセットしている
+    // Set so that the target power and the power after the low pass are the same value
     hardware_->position->set_current(0.0);
     hardware_->spring_l_position->set_current(5.0);
     hardware_->spring_r_position->set_current(5.0);
     SpinOnce(rate);
     EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), hsrb_servomotor_protocol::kDriveModeHandPosition);
 
-    // ゲインと差分から導出
+    // Derived from gain and difference
     EXPECT_NEAR(hardware_->position->command(), 0.4 * 1.0, kEpsilon);
 
     auto goal_handle = future_goal_handle.get();
     EXPECT_TRUE(goal_handle.get());
-    EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-        {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+    EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+      controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
   }
 
   void PreemptWithFollowTrajectoryAction() {
-    // 軌道追従中に偏差過大でabortedにならないように，軌道のゴール位置に近い値を入れておく
+    // Put a value close to the goal position of the orbital so that you do not become an ABORTED due to excessive deviation during tracking
     hardware_->position->set_current(0.96);
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -234,7 +238,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // テスト軌道は1.0へ0.5秒で移動
+    // Test orbital moves to 1.0 in 0.5 seconds
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
     }
@@ -243,12 +247,12 @@ class GripperControllerTest : public ::testing::Test {
 
     auto goal_handle = future_goal_handle.get();
     EXPECT_TRUE(goal_handle.get());
-    EXPECT_TRUE(WaitForStatus<FollowTrajectoryAction>(
-        {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+    EXPECT_TRUE((WaitForStatus<FollowTrajectoryAction, rclcpp::Node::SharedPtr>(
+      controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
   }
 
   void PreemptWithGraspAction() {
-    // アクションを成功させるために，現在力と目標力を合わせておく
+    // Match your current power and goals to succeed in action
     hardware_->effort->set_current(3.0);
 
     ApplayEffortAction::Goal grasp_goal;
@@ -258,7 +262,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_grasp_goal_handle);
 
-    // 握り込み開始を待つ
+    // Wait for the start of grip
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->grasping_flag->bool_command()) {
@@ -267,29 +271,29 @@ class GripperControllerTest : public ::testing::Test {
     }
     EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), hsrb_servomotor_protocol::kDriveModeHandGrasp);
 
-    // 握り込み中
+    // While holding in
     hardware_->grasping_flag->set_current(true);
     SpinOnce(rate);
 
-    // 握り込み完了
+    // Completed in grip
     hardware_->grasping_flag->set_current(false);
     SpinOnce(rate);
 
     auto grasp_goal_handle = future_grasp_goal_handle.get();
     EXPECT_TRUE(grasp_goal_handle.get());
-    EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-        {controller_node_, client_node_}, grasp_goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+    EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+      controller_, { client_node_ }, grasp_goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
   }
 
   void PreemptWithTrajectoryTopic() {
-    // 軌道追従中に偏差過大でabortedにならないように，軌道のゴール位置に近い値を入れておく
+    // Put a value close to the goal position of the orbital so that you do not become an ABORTED due to excessive deviation during tracking
     hardware_->position->set_current(1.46);
 
     auto trajectory = MakeTrajectory();
     trajectory.points[0].positions[0] = 1.5;
     trajectory_publisher_->publish(trajectory);
 
-    // テスト軌道は1.5へ0.5秒で移動
+    // Test orbital moves to 1.5 in 0.5 seconds
     rclcpp::WallRate rate(100.0);
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
@@ -298,6 +302,7 @@ class GripperControllerTest : public ::testing::Test {
     EXPECT_DOUBLE_EQ(hardware_->position->command(), 1.5);
   }
 };
+
 
 TEST_F(GripperControllerTest, ApplyForceAction) {
   ApplayEffortAction::Goal goal;
@@ -311,24 +316,24 @@ TEST_F(GripperControllerTest, ApplyForceAction) {
 
   std::this_thread::sleep_for(std::chrono::milliseconds(2050));
 
-  // 目標力とローパス後の力が同じ値になるようにセットしている
+  // Set so that the target power and the power after the low pass are the same value
   hardware_->spring_l_position->set_current(5.0);
   hardware_->spring_r_position->set_current(5.0);
   SpinOnce(rate);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // ゲインと差分から導出
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(), 0.4 * 1.0, kEpsilon);
 
   EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), hsrb_servomotor_protocol::kDriveModeHandPosition);
 }
 
 TEST_F(GripperControllerTest, FollowTrajectoryAction) {
-  // 軌道追従中に偏差過大でabortedにならないように，軌道のゴール位置に近い値を入れておく
+  // Put a value close to the goal position of the orbital so that you do not become an ABORTED due to excessive deviation during tracking
   hardware_->position->set_current(0.96);
 
   FollowTrajectoryAction::Goal goal;
@@ -338,7 +343,7 @@ TEST_F(GripperControllerTest, FollowTrajectoryAction) {
   rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
-  // テスト軌道は1.0へ0.5秒で移動
+  // Test orbital moves to 1.0 in 0.5 seconds
   std::vector<double> command_positions;
   for (int i = 0; i < 60; ++i) {
     SpinOnce(rate);
@@ -347,8 +352,8 @@ TEST_F(GripperControllerTest, FollowTrajectoryAction) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<FollowTrajectoryAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<FollowTrajectoryAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
   double previous_command = 0.96;
   for (double command : command_positions) {
@@ -362,7 +367,7 @@ TEST_F(GripperControllerTest, FollowTrajectoryAction) {
 }
 
 TEST_F(GripperControllerTest, GraspAction) {
-  // アクションを成功させるために，現在力と目標力を合わせておく
+  // Match your current power and goals to succeed in action
   hardware_->effort->set_current(3.0);
   hardware_->grasping_flag->set_current(false);
 
@@ -375,20 +380,20 @@ TEST_F(GripperControllerTest, GraspAction) {
 
   while (rclcpp::ok()) {
     SpinOnce(rate);
-    // 握り込み開始でbreak
+    // Break at the start of grip
     if (hardware_->grasping_flag->bool_command()) {
       EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
       break;
     }
   }
-  // 握り込み中
+  // While holding in
   hardware_->grasping_flag->set_current(true);
   SpinOnce(rate);
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // 握り込み完了
+  // Completed in grip
   hardware_->grasping_flag->set_current(false);
   SpinOnce(rate);
 
@@ -397,8 +402,8 @@ TEST_F(GripperControllerTest, GraspAction) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
   EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), hsrb_servomotor_protocol::kDriveModeHandGrasp);
 }
@@ -407,72 +412,76 @@ TEST_F(GripperControllerTest, ApplyForceAndFollowTrajectory) {
   auto goal_handle = StartApplyForceAction();
   PreemptWithFollowTrajectoryAction();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, ApplyForceAndGrasp) {
   auto goal_handle = StartApplyForceAction();
   PreemptWithGraspAction();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, ApplyForceAndSendTrajectoryTopic) {
   auto goal_handle = StartApplyForceAction();
   PreemptWithTrajectoryTopic();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, FollowTrajectoryAndApplyForce) {
   auto goal_handle = StartFollowTrajectoryAction();
   PreemptWithApplyForceAction();
 
-  EXPECT_TRUE(WaitForStatus<FollowTrajectoryAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<FollowTrajectoryAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, FollowTrajectoryAndGrasp) {
   auto goal_handle = StartFollowTrajectoryAction();
   PreemptWithGraspAction();
 
-  EXPECT_TRUE(WaitForStatus<FollowTrajectoryAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  std::this_thread::sleep_for(std::chrono::milliseconds(2050));
+
+  EXPECT_TRUE((WaitForStatus<FollowTrajectoryAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, FollowTrajectoryAndSendTrajectoryTopic) {
   auto goal_handle = StartFollowTrajectoryAction();
   PreemptWithTrajectoryTopic();
 
-  EXPECT_TRUE(WaitForStatus<FollowTrajectoryAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  std::this_thread::sleep_for(std::chrono::milliseconds(2050));
+
+  EXPECT_TRUE((WaitForStatus<FollowTrajectoryAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, GraspAndApplyForce) {
   auto goal_handle = StartGraspAction();
   PreemptWithApplyForceAction();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, GraspAndFollowTrajectory) {
   auto goal_handle = StartGraspAction();
   PreemptWithFollowTrajectoryAction();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, GraspAndSendTrajectoryTopic) {
   auto goal_handle = StartGraspAction();
   PreemptWithTrajectoryTopic();
 
-  EXPECT_TRUE(WaitForStatus<ApplayEffortAction>(
-      {controller_node_, client_node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
+    controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GripperControllerTest, SendTrajectoryTopicAndApplyForce) {
@@ -489,7 +498,6 @@ TEST_F(GripperControllerTest, SendTrajectoryTopicAndGrasp) {
   SendTrajectoryTopic();
   PreemptWithFollowTrajectoryAction();
 }
-
 }  // namespace hsrb_gripper_controller
 
 int main(int argc, char** argv) {

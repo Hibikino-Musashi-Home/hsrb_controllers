@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file command_subscriber-test.cpp
+/// @brief Test of input command control class for all -point bogie control
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -42,12 +45,12 @@ DAMAGE.
 namespace {
 
 template<typename Action>
-bool WaitForStatus(rclcpp::Node::SharedPtr node_ptr,
+bool WaitForStatus(rclcpp_lifecycle::LifecycleNode::SharedPtr node_ptr,
                    typename rclcpp_action::ClientGoalHandle<Action>::SharedPtr goal_handle,
                    int8_t expected) {
   const auto end_time = std::chrono::system_clock::now() + std::chrono::duration<double>(1.0);
   while (goal_handle->get_status() != expected) {
-    rclcpp::spin_some(node_ptr);
+    rclcpp::spin_some(node_ptr->get_node_base_interface());
     if (std::chrono::system_clock::now() > end_time) {
       std::cout << "The last status is " << static_cast<int32_t>(goal_handle->get_status()) << std::endl;
       return false;
@@ -75,20 +78,22 @@ class CommandVelocitySubscriberTest  : public ::testing::Test {
  protected:
   void SetUp() override;
 
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   std::shared_ptr<CommandInterfaceMock> interface_mock_;
   CommandVelocitySubscriber::Ptr subscriber_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
 };
 
 void CommandVelocitySubscriberTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node_->configure();
   interface_mock_ = std::make_shared<CommandInterfaceMock>();
   subscriber_ = std::make_shared<CommandVelocitySubscriber>(node_, interface_mock_.get());
-  publisher_ = node_->create_publisher<geometry_msgs::msg::Twist>("~/command_velocity", rclcpp::SystemDefaultsQoS());
+  publisher_ = node_->create_publisher<geometry_msgs::msg::Twist>("~/cmd_vel", rclcpp::SystemDefaultsQoS());
+  node_->activate();
 }
 
-// 受け取った速度指令をControllerに渡す
+// Give the received speed command to Controller
 TEST_F(CommandVelocitySubscriberTest, SubscribeOnRunning) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -104,16 +109,16 @@ TEST_F(CommandVelocitySubscriberTest, SubscribeOnRunning) {
   command_msg.linear.x = 1.0;
 
   publisher_->publish(command_msg);
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (!is_called) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
 
   EXPECT_EQ(received_command->linear.x, 1.0);
 }
 
-// 指令受付不可なので受け取った速度指令をControllerに渡さない
+// Since the order is not accepted, do not pass the speed command received to the controller
 TEST_F(CommandVelocitySubscriberTest, SubscribeOnStopped) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -125,10 +130,10 @@ TEST_F(CommandVelocitySubscriberTest, SubscribeOnStopped) {
   command_msg.linear.x = 1.0;
 
   publisher_->publish(command_msg);
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (!is_called) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
 }
 
@@ -137,21 +142,21 @@ class CommandTrajectorySubscriberTest  : public ::testing::Test {
  protected:
   void SetUp() override;
 
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   std::shared_ptr<CommandInterfaceMock> interface_mock_;
   CommandTrajectorySubscriber::Ptr subscriber_;
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr publisher_;
 };
 
 void CommandTrajectorySubscriberTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   interface_mock_ = std::make_shared<CommandInterfaceMock>();
   subscriber_ = std::make_shared<CommandTrajectorySubscriber>(node_, interface_mock_.get());
   publisher_ = node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
       "~/joint_trajectory", rclcpp::SystemDefaultsQoS());
 }
 
-// 受け取った関節軌道をControllerに渡す
+// Pass the received joint orbital to Controller
 TEST_F(CommandTrajectorySubscriberTest, SubscribeOnRunning) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -172,17 +177,17 @@ TEST_F(CommandTrajectorySubscriberTest, SubscribeOnRunning) {
   command_msg.header.frame_id = "test";
 
   publisher_->publish(command_msg);
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (!is_called) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
 
   EXPECT_EQ(validated_command.header.frame_id, "test");
   EXPECT_EQ(received_command->header.frame_id, "test");
 }
 
-// 指令受付不可なので受け取った関節軌道をControllerに渡さない
+// Since the order is not accepted, do not pass the received joint orbital to the Controller
 TEST_F(CommandTrajectorySubscriberTest, SubscribeOnStopped) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -195,14 +200,14 @@ TEST_F(CommandTrajectorySubscriberTest, SubscribeOnStopped) {
   command_msg.header.frame_id = "test";
 
   publisher_->publish(command_msg);
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (!is_called) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
 }
 
-// 受け取った関節軌道が不正なのでControllerに渡さない
+// I don't give it to Controller because the received joint orbital is fraudulent
 TEST_F(CommandTrajectorySubscriberTest, SubscribeInvalidTrajectory) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -215,10 +220,10 @@ TEST_F(CommandTrajectorySubscriberTest, SubscribeInvalidTrajectory) {
   command_msg.header.frame_id = "test";
 
   publisher_->publish(command_msg);
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (!is_called) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
 }
 
@@ -227,7 +232,7 @@ class TrajectoryActionServerTest : public ::testing::Test {
  protected:
   void SetUp() override;
 
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   std::shared_ptr<CommandInterfaceMock> interface_mock_;
   TrajectoryActionServer::Ptr server_;
 
@@ -236,7 +241,7 @@ class TrajectoryActionServerTest : public ::testing::Test {
 };
 
 void TrajectoryActionServerTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   interface_mock_ = std::make_shared<CommandInterfaceMock>();
 
   node_->declare_parameter("constraints.odom_x.trajectory", 1.0);
@@ -250,7 +255,7 @@ void TrajectoryActionServerTest::SetUp() {
   EXPECT_TRUE(client_->wait_for_action_server());
 }
 
-// 受け取った関節軌道をコントローラに渡す
+// Give the received joint orbit to the controller
 TEST_F(TrajectoryActionServerTest, ReceiveGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
 
@@ -278,7 +283,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveGoal) {
   EXPECT_EQ(received_command->header.frame_id, "test");
 }
 
-// 指令受付不可なのでゴールを受け付けない
+// Directors are not accepted, so we do not accept goals
 TEST_F(TrajectoryActionServerTest, ReceiveGoalOnStopped) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(false));
 
@@ -289,7 +294,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveGoalOnStopped) {
   EXPECT_EQ(future_goal_handle.get().get(), nullptr);
 }
 
-// 関節軌道が不正なのでゴールを受け付けない
+// We do not accept goals because the joint trajectory is fraudulent
 TEST_F(TrajectoryActionServerTest, ReceiveInvalidGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(false));
@@ -302,7 +307,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveInvalidGoal) {
   EXPECT_EQ(future_goal_handle.get().get(), nullptr);
 }
 
-// アクションのキャンセル
+// Action cancellation
 TEST_F(TrajectoryActionServerTest, CancelGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -325,7 +330,7 @@ TEST_F(TrajectoryActionServerTest, CancelGoal) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-// 軌道追従中のUpdateResult，誤差過大
+// Updatereresult while following orbitals, large errors
 TEST_F(TrajectoryActionServerTest, UpdateResultOutsidePathTorelance) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -341,7 +346,7 @@ TEST_F(TrajectoryActionServerTest, UpdateResultOutsidePathTorelance) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
 }
 
-// 軌道追従完了時のUpdateResult，正常系
+// Updateresult when orbit follow -up, normal system
 TEST_F(TrajectoryActionServerTest, UpdateResultInsideGoalTorelance) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -357,7 +362,7 @@ TEST_F(TrajectoryActionServerTest, UpdateResultInsideGoalTorelance) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-// 軌道追従完了時のUpdateResult，時間内にゴールできない
+// Updateresult when track follow -up is completed, cannot goal within time
 TEST_F(TrajectoryActionServerTest, UpdateResultOutsideGoalTimeTorelance) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -373,7 +378,7 @@ TEST_F(TrajectoryActionServerTest, UpdateResultOutsideGoalTimeTorelance) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
 }
 
-// フィードバックの発行
+// Issuance of feedback
 TEST_F(TrajectoryActionServerTest, PublishFeedback) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -396,10 +401,10 @@ TEST_F(TrajectoryActionServerTest, PublishFeedback) {
                                    Eigen::Vector3d(3.0, 4.0, 5.0));
   server_->SetFeedback(state, stamp);
 
-  auto timeout = TimeoutDetection(node_);
+  auto timeout = TimeoutDetection(node_->get_clock());
   while (feedback.actual.positions.size() != 3) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
   EXPECT_EQ(feedback.header.stamp, stamp);
 
@@ -413,12 +418,28 @@ TEST_F(TrajectoryActionServerTest, PublishFeedback) {
   EXPECT_DOUBLE_EQ(feedback.actual.velocities[1], 4.0);
   EXPECT_DOUBLE_EQ(feedback.actual.velocities[2], 5.0);
 
+  ASSERT_EQ(feedback.desired.positions.size(), 3);
+  EXPECT_DOUBLE_EQ(feedback.desired.positions[0], 2.0);
+  EXPECT_DOUBLE_EQ(feedback.desired.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(feedback.desired.positions[2], 0.0);
+
+  ASSERT_EQ(feedback.desired.velocities.size(), 3);
+  EXPECT_DOUBLE_EQ(feedback.desired.velocities[0], 3.0);
+  EXPECT_DOUBLE_EQ(feedback.desired.velocities[1], 4.0);
+  EXPECT_DOUBLE_EQ(feedback.desired.velocities[2], 5.0);
+
+  ASSERT_EQ(feedback.error.positions.size(), 3);
+  EXPECT_DOUBLE_EQ(feedback.error.positions[0], 0.0);
+  EXPECT_DOUBLE_EQ(feedback.error.positions[1], 0.0);
+  EXPECT_DOUBLE_EQ(feedback.error.positions[2], 0.0);
+
+  ASSERT_EQ(feedback.error.velocities.size(), 3);
+  EXPECT_DOUBLE_EQ(feedback.error.velocities[0], 0.0);
+  EXPECT_DOUBLE_EQ(feedback.error.velocities[1], 0.0);
+  EXPECT_DOUBLE_EQ(feedback.error.velocities[2], 0.0);
+
   EXPECT_TRUE(feedback.actual.accelerations.empty());
-  EXPECT_TRUE(feedback.desired.positions.empty());
-  EXPECT_TRUE(feedback.desired.velocities.empty());
   EXPECT_TRUE(feedback.desired.accelerations.empty());
-  EXPECT_TRUE(feedback.error.positions.empty());
-  EXPECT_TRUE(feedback.error.velocities.empty());
   EXPECT_TRUE(feedback.error.accelerations.empty());
 
   feedback = ActionType::Feedback();
@@ -428,10 +449,10 @@ TEST_F(TrajectoryActionServerTest, PublishFeedback) {
                               {2.1, 1.2, 0.3}, {3.4, 4.5, 5.6}, {6.0, 7.0, 8.0});
   server_->SetFeedback(state, stamp);
 
-  timeout = TimeoutDetection(node_);
+  timeout = TimeoutDetection(node_->get_clock());
   while (feedback.desired.positions.size() != 3) {
     timeout.Run();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
   }
   ASSERT_EQ(feedback.desired.positions.size(), 3);
   EXPECT_DOUBLE_EQ(feedback.desired.positions[0], 2.1);
@@ -461,7 +482,7 @@ TEST_F(TrajectoryActionServerTest, PublishFeedback) {
   EXPECT_TRUE(feedback.error.accelerations.empty());
 }
 
-// 軌道追従完了後に新しいゴールが届く
+// A new goal will arrive after the track follow -up is completed
 TEST_F(TrajectoryActionServerTest, AcceptNewGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(2).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(2).WillRepeatedly(::testing::Return(true));
@@ -484,7 +505,7 @@ TEST_F(TrajectoryActionServerTest, AcceptNewGoal) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_ACCEPTED));
 }
 
-// 軌道追従完了前に新しいゴールが届く
+// A new goal arrives before the trajectory follows is completed
 TEST_F(TrajectoryActionServerTest, AcceptNewGoalBeforeComplete) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(2).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(2).WillRepeatedly(::testing::Return(true));

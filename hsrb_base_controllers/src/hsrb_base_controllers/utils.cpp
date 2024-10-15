@@ -30,13 +30,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief Convenient function
+
 #include "utils.hpp"
 
 namespace hsrb_base_controllers {
 
-// 非正の場合，デフォルト値を使うパラメータ取得
+// In the case of non -correct, obtaining a parameter that uses the default value
 double GetPositiveParameter(
-    const rclcpp::Node::SharedPtr& node, const std::string& parameter_name, double default_value) {
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name, double default_value) {
   auto value = GetParameter(node, parameter_name, default_value);
   if (value > 0.0) {
     return value;

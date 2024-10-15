@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_input_odometry.hpp
+/// @brief Odometri class of all -sided bogies
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 
@@ -37,6 +39,7 @@ DAMAGE.
 
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <realtime_tools/realtime_buffer.h>
 
 namespace hsrb_base_controllers {
@@ -47,22 +50,22 @@ class InputOdometry {
  public:
   using Ptr = std::shared_ptr<InputOdometry>;
 
-  explicit InputOdometry(const rclcpp::Node::SharedPtr& node);
+  explicit InputOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
 
-  // オドメトリを初期化する
+  // Initialize the odmetry
   void InitOdometry();
-  // 現在のオドメトリを取得する
+  // Get the current odmetry
   nav_msgs::msg::Odometry& GetOdometry() {
     return *odometry_buffer_.readFromRT();
   }
 
  private:
-  // オドメトリコールバック
+  // Odometry callback
   void OdometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
 
-  // オドメトリサブスクライバ
+  // Odometry sub scrider
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscriber_;
-  // リアルタイムで使用するオドメトリデータ
+  // Odometry data used in real time
   RealtimeOdometryBuffer odometry_buffer_;
 };
 

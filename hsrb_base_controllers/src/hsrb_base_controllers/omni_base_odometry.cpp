@@ -30,32 +30,36 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_odometry.cpp
+/// @brief Odome bogie Odometri class
 #include <string>
+
+#include <tmc_utils/qos.hpp>
 
 #include <hsrb_base_controllers/omni_base_odometry.hpp>
 #include "utils.hpp"
 
 namespace {
-// 台車オドメトリパブリッシュ周波数デフォルト値[Hz]
+// Odometry Publish frequency default value [Hz]
 constexpr double kDefaultOdometryPublishRate = 30.0;
-// 台車オドメトリのTFパブリッシュ周波数デフォルト値[Hz]
+// Bogie Odometry TF Publish frequency default value [Hz]
 constexpr double kDefaultTransformPublishRate = 30.0;
 }
 
 namespace hsrb_base_controllers {
 
-/// オドメトリ計算クラスの初期化
-Odometry::Odometry(const rclcpp::Node::SharedPtr& node)
+/// Initialization of the Odometry calculation class
+Odometry::Odometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : odometry_(Eigen::Vector3d::Zero()),
       velocity_(Eigen::Vector3d::Zero()) {}
 
 
-/// 全方位台車ホイールオドメトリ計算クラスの初期化
-BaseOdometry::BaseOdometry(const rclcpp::Node::SharedPtr& node) : Odometry(node) {
+/// Initialization of all -scale bogies wheel odmetry calculation class
+BaseOdometry::BaseOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) : Odometry(node) {
   input_odom_ = std::make_shared<InputOdometry>(node);
 }
 
-/// オドメトリを更新する
+/// Update the odometri
 void BaseOdometry::UpdateOdometry(double period,
                                   const Eigen::Vector3d& positions,
                                   const Eigen::Vector3d& velocities) {
@@ -64,74 +68,74 @@ void BaseOdometry::UpdateOdometry(double period,
               current_odom.pose.pose.position.y,
               2.0 * std::atan2(current_odom.pose.pose.orientation.z,
                                current_odom.pose.pose.orientation.w);
-  // レーザオドメトリ等、速度が計算できないオドメトリが入る可能性があるため
-  // controller内で計算している速度を入力
+  // Because there is a possibility that there will be an odometri that cannot calculate the speed, such as a laserodometry.
+  // Enter the speed calculated in the Controller
   velocity_ = velocities;
 }
 
-/// オドメトリデータを初期化する
+/// Initialize the odometri data
 void BaseOdometry::InitOdometry() {
   input_odom_->InitOdometry();
 }
 
-/// 全方位台車ホイールオドメトリ計算クラスの初期化
-WheelOdometry::WheelOdometry(const rclcpp::Node::SharedPtr& node, const OmniBaseSize& omnibase_size)
+/// Initialization of all -scale bogies wheel odmetry calculation class
+WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const OmniBaseSize& omnibase_size)
     : Odometry(node),
       last_odometry_published_time_(node->now()),
       last_transform_published_time_(node->now()),
-      odometry_publish_period_(0),
-      transform_publish_period_(0) {
-  // 台車オドメトリに関するフレーム名を取得
+      odometry_publish_period_(0, 0),
+      transform_publish_period_(0, 0) {
+  // Get a frame name for the bogie Odometry
   wheel_odom_frame_ = GetParameter(node, "wheel_odom_map_frame", "odom");
   wheel_base_frame_ = GetParameter(node, "wheel_odom_base_frame", "base_footprint_wheel");
   tf_prefix_ = GetParameter(node, "tf_prefix", "");
-  // 全方位台車モデルのパラメータセット
+  // Parameters set of omnidirectional bogie models
   twin_drive_ = std::make_shared<TwinCasterDrive>(omnibase_size);
 
-  // オドメトリのパブリッシャをセット
+  // Set an odometri
   odometry_publisher_impl_ = node->create_publisher<nav_msgs::msg::Odometry>(
       "~/wheel_odom", rclcpp::SystemDefaultsQoS());
   odometry_publisher_ = std::make_unique<OdometryPublisher>(odometry_publisher_impl_);
 
-  transform_publisher_impl_ = node->create_publisher<tf2_msgs::msg::TFMessage>("/tf", rclcpp::SystemDefaultsQoS());
+  transform_publisher_impl_ = node->create_publisher<tf2_msgs::msg::TFMessage>(
+      "/tf", tmc_utils::ReliableVolatileQoS());
   transform_publisher_ = std::make_unique<TFPublisher>(transform_publisher_impl_);
   transform_publisher_->msg_.transforms.resize(1);
 
-  // 台車オドメトリのパブリッシュ間隔を取得
+  // Acquired the public spacing interval of the bogie Odometry
   const double odometry_publish_rate = GetPositiveParameter(node, "odometry_publish_rate", kDefaultOdometryPublishRate);
   odometry_publish_period_ = rclcpp::Duration::from_seconds(1.0 / odometry_publish_rate);
-  // 台車オドメトリTFのパブリッシュ間隔を取得
+  // Acquired the public spacing interval of bogie Odometry TF
   const double transform_publish_rate = GetPositiveParameter(node, "transform_publish_rate",
                                                              kDefaultTransformPublishRate);
   transform_publish_period_ = rclcpp::Duration::from_seconds(1.0 / transform_publish_rate);
 }
 
-/// ホイールオドメトリの更新
+/// Update wheeldeodometry
 void WheelOdometry::UpdateOdometry(double period,
                                    const Eigen::Vector3d& positions,
                                    const Eigen::Vector3d& velocities) {
-  // 車輪の位置、速度からオドメトリと台車速度を更新
+  // Update the togock speed from the wheel position and speed
   odometry_ = twin_drive_->UpdateOdometry(period, positions, velocities);
   twin_drive_->Update(positions[kJointIDSteer]);
   velocity_ = twin_drive_->ConvertForward(velocities);
 }
 
 
-/// オドメトリを発行する
+/// Publish anodometry
 void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
   const Eigen::Vector3d wheel_odometry = odometry_;
   const Eigen::Vector3d wheel_odom_velocity = velocity_;
   const Eigen::Quaterniond wheel_quat_trans(
       Eigen::AngleAxisd(wheel_odometry(kIndexBaseTheta), Eigen::Vector3d::UnitZ()));
 
-  // オドメトリトピックを発行
+  // Issued Odometrytopic
   if (time - last_odometry_published_time_ >= odometry_publish_period_) {
     last_odometry_published_time_ += odometry_publish_period_;
-    // ホイールオドメトリトピックを発行
+    // Issued wheel -menetto topic
     if (odometry_publisher_ && odometry_publisher_->trylock()) {
       auto& msg = odometry_publisher_->msg_;
       msg.header.stamp = time;
-      // TODO(Takeshita) 厳密にはtf::resolveに相当する関数が必要
       msg.header.frame_id = tf_prefix_ + wheel_odom_frame_;
       msg.child_frame_id = tf_prefix_ + wheel_base_frame_;
       msg.pose.pose.position.x = wheel_odometry(kIndexBaseX);
@@ -148,7 +152,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     }
   }
 
-  // オドメトリのtfを発行
+  // Issued Odometry TF
   if (time - last_transform_published_time_ >= transform_publish_period_) {
     last_transform_published_time_ += transform_publish_period_;
     geometry_msgs::msg::Transform transform;
@@ -160,7 +164,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     transform.rotation.z = wheel_quat_trans.z();
     transform.rotation.w = wheel_quat_trans.w();
 
-    // ホイールオドメトリのtfを発行
+    // Issued TF of wheeldometry
     if (transform_publisher_ && transform_publisher_->trylock()) {
       auto& msg = transform_publisher_->msg_.transforms.front();
       msg.header.stamp = time;

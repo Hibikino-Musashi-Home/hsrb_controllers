@@ -32,7 +32,6 @@ DAMAGE.
 */
 #ifndef HSRB_GRIPPER_CONTROLLER_HRH_GRIPPER_FOLLOW_TRAJECTORY_ACTION_HPP_
 #define HSRB_GRIPPER_CONTROLLER_HRH_GRIPPER_FOLLOW_TRAJECTORY_ACTION_HPP_
-
 #include <limits>
 #include <memory>
 #include <vector>
@@ -45,55 +44,63 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperFollowTrajectoryAction
-/// @brief Hrh軌道追従アクションクラス
+/// @brief HRH orbital tracking action class
 class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::action::FollowJointTrajectory> {
  public:
-  /// コンストラクタ
-  /// @param [in] controller 親コントローラ
+  /// constructor
+  /// @param [IN] Controller parent controller
   explicit HrhGripperFollowTrajectoryAction(HrhGripperController* controller);
   virtual ~HrhGripperFollowTrajectoryAction() = default;
+
+  bool Activate() override;
 
   void Update(const rclcpp::Time& time) override;
 
   void PreemptActiveGoal() override;
 
  protected:
-  /// アクションの初期化の実装
-  bool InitImpl(const rclcpp::Node::SharedPtr& node) override;
-  /// ゴールが受け入れ可能かをチェックする
+  /// Implementation of initialization of action
+  bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
+  /// Check if the goal is acceptable
   bool ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// アクションの目標を更新する
+  /// Update action goals
   void UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
 
-  /// デフォルトのゴール位置の許容誤差[rad]
+  /// Tolerance error in the default goal position [RAD]
   double default_goal_tolerance_;
-  /// デフォルトのゴール到達時刻の許容誤差[s]
+  /// Tolerance error of default goal arrival time [S]
   double default_goal_time_tolerance_;
 
-  /// 軌道指令がトピックで届いた際のコールバック
-  /// @param [in] msg 軌道
+  // Whether to connect from the existing desired when a new orbit comes
+  // Variables and behaviors are tailored to JointTrajectoryController
+  bool open_loop_control_;
+  // Finally sampled state
+  trajectory_msgs::msg::JointTrajectoryPoint last_command_state_;
+
+  /// Callback when the orbit command arrives at the topic
+  /// @param [in] MSG track
   void TrajectoryCommandCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
-  /// 軌道指令受信
+  /// Track command reception
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
 
-  /// 軌道を保持する
+  /// Hold the orbit
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_;
   std::shared_ptr<joint_trajectory_controller::Trajectory> trajectory_ptr_;
   realtime_tools::RealtimeBuffer<trajectory_msgs::msg::JointTrajectory::SharedPtr> trajectory_msg_buffer_;
 
   /// @struct GoalCondition
-  /// @brief ゴール条件
+  /// @brief Goal conditions
   struct GoalCondition {
-    /// 指令位置[rad]
+    /// Instruction location [RAD]
     double position;
-    /// 目標到達時刻
+    /// Objective time
     rclcpp::Time expected_arrival_time;
-    /// 軌道追従をやめる時刻
+    /// Time to stop tracking orbit
     rclcpp::Time abort_time;
-    /// ゴール位置の許容誤差
+    /// Tolerance error in the goal position
     double goal_tolerance;
   };
-  /// ゴール条件のバッファ
+  /// Goal condition buffer
   realtime_tools::RealtimeBuffer<GoalCondition> goal_condition_buffer_;
 };
 

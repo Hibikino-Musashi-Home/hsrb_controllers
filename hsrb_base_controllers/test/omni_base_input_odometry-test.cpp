@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_input_odometry-test.cpp
+/// @brief External input Odometri class test
+
 #include <gtest/gtest.h>
 
 #include <hsrb_base_controllers/omni_base_input_odometry.hpp>
@@ -38,10 +41,12 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// オドメトリを初期化すること
+/// Initialize the odmetry
 TEST(OmniBaseInputOdometryTest, InitOdometry) {
-  auto node = rclcpp::Node::make_shared("test_node");
+  auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node->configure();
   auto odom = InputOdometry(node);
+  node->activate();
 
   odom.InitOdometry();
 
@@ -56,12 +61,14 @@ TEST(OmniBaseInputOdometryTest, InitOdometry) {
   EXPECT_EQ(output.pose.pose.orientation.w, 1.0);
 }
 
-/// 現在のオドメトリを取得すること
+/// Get the current odmetry
 TEST(OmniBaseInputOdometryTest, GetOdometry) {
-  auto node = rclcpp::Node::make_shared("test_node");
+  auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node->configure();
   auto odom = InputOdometry(node);
   auto publisher = node->create_publisher<nav_msgs::msg::Odometry>(
       "odom", rclcpp::SystemDefaultsQoS());
+  node->activate();
 
   nav_msgs::msg::Odometry msg;
   msg.header.stamp = node->now();
@@ -74,10 +81,10 @@ TEST(OmniBaseInputOdometryTest, GetOdometry) {
   msg.pose.pose.orientation.w = 7.0;
 
   publisher->publish(msg);
-  auto timeout = TimeoutDetection(node);
+  auto timeout = TimeoutDetection(node->get_clock());
   while (odom.GetOdometry().header.stamp == rclcpp::Time(0)) {
     timeout.Run();
-    rclcpp::spin_some(node);
+    rclcpp::spin_some(node->get_node_base_interface());
   }
 
   auto output = odom.GetOdometry();

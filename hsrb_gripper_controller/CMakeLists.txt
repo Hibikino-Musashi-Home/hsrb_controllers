@@ -46,21 +46,20 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-
-  ament_add_gtest(apply_force_action_test test/hrh_gripper_apply_force_action-test.cpp
+  ament_add_gtest(apply_force_action_test test/hrh_gripper_apply_force_action_test.cpp
                   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
   target_link_libraries(apply_force_action_test ${PROJECT_NAME})
 
-  ament_add_gtest(apply_force_calculator_test test/hrh_gripper_controller_apply_force_calculator-test.cpp)
+  ament_add_gtest(apply_force_calculator_test test/hrh_gripper_controller_apply_force_calculator_test.cpp)
   target_link_libraries(apply_force_calculator_test ${PROJECT_NAME})
 
-  ament_add_gtest(gripper_controller_test test/hrh_gripper_controller-test.cpp)
+  ament_add_gtest(gripper_controller_test test/hrh_gripper_controller_test.cpp)
   target_link_libraries(gripper_controller_test ${PROJECT_NAME})
 
-  ament_add_gtest(follow_trajectory_action_test test/hrh_gripper_follow_trajectory_action-test.cpp)
+  ament_add_gtest(follow_trajectory_action_test test/hrh_gripper_follow_trajectory_action_test.cpp)
   target_link_libraries(follow_trajectory_action_test ${PROJECT_NAME})
 
-  ament_add_gtest(grasp_action_test test/hrh_gripper_grasp_action-test.cpp)
+  ament_add_gtest(grasp_action_test test/hrh_gripper_grasp_action_test.cpp)
   target_link_libraries(grasp_action_test ${PROJECT_NAME})
 endif()
 

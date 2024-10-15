@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_control_method-test.cpp
+/// @brief Test of all -sided bogie control mode class
+
 #include <gtest/gtest.h>
 
 #include <hsrb_base_controllers/omni_base_control_method.hpp>
@@ -45,15 +48,17 @@ class OmniBaseVelocityControlTest : public ::testing::Test {
  protected:
   void SetUp() override;
 
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   OmniBaseVelocityControl::Ptr control_;
   geometry_msgs::msg::Twist::SharedPtr input_;
 };
 
 void OmniBaseVelocityControlTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node_->configure();
   node_->declare_parameter("command_timeout", 0.1);
   control_ = std::make_shared<OmniBaseVelocityControl>(node_);
+  node_->activate();
 
   input_ = std::make_shared<geometry_msgs::msg::Twist>();
   input_->linear.x = 0.1;
@@ -61,7 +66,7 @@ void OmniBaseVelocityControlTest::SetUp() {
   input_->angular.z = 0.3;
 }
 
-// 速度指令を更新して取得できること
+// Updating speed commands and acquiring them
 TEST_F(OmniBaseVelocityControlTest, UpdateCommandVelocity) {
   control_->UpdateCommandVelocity(input_);
   auto output = control_->GetOutputVelocity();
@@ -71,7 +76,7 @@ TEST_F(OmniBaseVelocityControlTest, UpdateCommandVelocity) {
   EXPECT_DOUBLE_EQ(output[2], 0.3);
 }
 
-// 指令速度が一定区間ないと速度が0になること
+// If the command speed is not a certain section, the speed will be 0
 TEST_F(OmniBaseVelocityControlTest, OutputVelocityIsZero) {
   control_->UpdateCommandVelocity(input_);
   rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(0.2)));
@@ -82,7 +87,7 @@ TEST_F(OmniBaseVelocityControlTest, OutputVelocityIsZero) {
   EXPECT_DOUBLE_EQ(output[2], 0.0);
 }
 
-// 指令速度をクリアできること
+// Being able to clear the command speed
 TEST_F(OmniBaseVelocityControlTest, Activate) {
   control_->UpdateCommandVelocity(input_);
   control_->Activate();
@@ -98,15 +103,18 @@ class OmniBaseTrajectoryControlTest : public ::testing::Test {
  protected:
   void SetUp() override;
 
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   OmniBaseTrajectoryControl::Ptr control_;
   trajectory_msgs::msg::JointTrajectory::SharedPtr input_trajectory_;
 };
 
 void OmniBaseTrajectoryControlTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node_->configure();
   std::vector<std::string> base_coordinates = {"odom_x", "odom_y", "odom_t"};
   control_ = std::make_shared<OmniBaseTrajectoryControl>(node_, base_coordinates);
+
+  node_->activate();
   control_->Activate();
 
   input_trajectory_ = std::make_shared<trajectory_msgs::msg::JointTrajectory>();
@@ -120,14 +128,14 @@ void OmniBaseTrajectoryControlTest::SetUp() {
   input_trajectory_->points.push_back(point);
 }
 
-// 軌道追従モードで指令速度を取得できること
+// Being able to obtain command speed in trajectory tracking mode
 TEST_F(OmniBaseTrajectoryControlTest, GetTrajOutputVelocity) {
   ControllerState state;
   state.actual.positions = {0.0, 0.0, 0.0};
   state.error.positions = {1.0, 2.0, 3.0};
   state.desired.velocities = {1.1, 1.2, 1.3};
 
-  // Pゲインのデフォルト値は1.0
+  // The default value of P gain is 1.0
   auto output_vel = control_->GetOutputVelocity(state);
   EXPECT_NEAR(output_vel[0], 2.1, kEpsilon);
   EXPECT_NEAR(output_vel[1], 3.2, kEpsilon);
@@ -141,7 +149,7 @@ TEST_F(OmniBaseTrajectoryControlTest, GetTrajOutputVelocity) {
   EXPECT_NEAR(output_vel[2], 4.3, kEpsilon);
 }
 
-// 軌道追従モードでゲインを反映した指令速度を取得できること
+// Being able to get the command speed reflecting the gain in the track tracking mode
 TEST_F(OmniBaseTrajectoryControlTest, GetTrajOutputVelocityWithGain) {
   node_->set_parameter({rclcpp::Parameter("odom_x.p_gain", 2.0)});
   node_->set_parameter({rclcpp::Parameter("odom_y.p_gain", 3.0)});
@@ -162,7 +170,7 @@ TEST_F(OmniBaseTrajectoryControlTest, GetTrajOutputVelocityWithGain) {
   EXPECT_NEAR(output_vel[2], 13.3, kEpsilon);
 }
 
-// 不正なゲインを指定した際は，デフォルト値が使われること
+// When the illegal gain is specified, the default value must be used.
 TEST_F(OmniBaseTrajectoryControlTest, NotPositivePGain) {
   node_->set_parameter({rclcpp::Parameter("odom_x.p_gain", 0.0)});
   node_->set_parameter({rclcpp::Parameter("odom_y.p_gain", 0.0)});
@@ -183,11 +191,11 @@ TEST_F(OmniBaseTrajectoryControlTest, NotPositivePGain) {
   EXPECT_NEAR(output_vel[2], 4.3, kEpsilon);
 }
 
-// 軌道の有無のチェック
+// Check for orbit
 TEST_F(OmniBaseTrajectoryControlTest, UpdateActiveTrajectory) {
   EXPECT_FALSE(control_->UpdateActiveTrajectory());
 
-  // 有効な軌道がacceptされたら，軌道があるうちは，Updateは何回でも成功する
+  // If the valid orbital is accessed, Update succeeds as many times as you want.
   control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
   EXPECT_TRUE(control_->UpdateActiveTrajectory());
   EXPECT_TRUE(control_->UpdateActiveTrajectory());
@@ -200,7 +208,7 @@ TEST_F(OmniBaseTrajectoryControlTest, UpdateActiveTrajectory) {
   EXPECT_FALSE(control_->UpdateActiveTrajectory());
 }
 
-// あるべき状態の取得
+// Acquisition of the state to be
 TEST_F(OmniBaseTrajectoryControlTest, SampleDesiredState) {
   input_trajectory_->points.back().positions = {1.0, 2.0, 3.0};
   input_trajectory_->points.back().velocities.clear();
@@ -264,7 +272,190 @@ TEST_F(OmniBaseTrajectoryControlTest, SampleDesiredState) {
   EXPECT_DOUBLE_EQ(time_from_point, 1.0);
 }
 
-// 関節名の並べ替えが行われる
+// Acquisition of the state to be
+TEST_F(OmniBaseTrajectoryControlTest, SampleDesiredStateWithOpenLoop) {
+  node_->set_parameter({rclcpp::Parameter("open_loop_control", true)});
+
+  std::vector<std::string> base_coordinates = {"odom_x", "odom_y", "odom_t"};
+  control_ = std::make_shared<OmniBaseTrajectoryControl>(node_, base_coordinates);
+  control_->Activate();
+
+  input_trajectory_->points.back().positions = {1.0, 2.0, 3.0};
+  input_trajectory_->points.back().velocities.clear();
+  input_trajectory_->points.back().accelerations.clear();
+  control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
+  EXPECT_TRUE(control_->UpdateActiveTrajectory());
+
+  std::vector<double> current_positions = {0.0, 0.0, 0.0};
+  std::vector<double> current_velocities = {0.0, 0.0, 0.0};
+
+  trajectory_msgs::msg::JointTrajectoryPoint desired_state;
+  bool before_last_point;
+  double time_from_point;
+
+  rclcpp::Time stamp = input_trajectory_->header.stamp;
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -10.0);
+
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(5, 0);
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.5);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 1.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -5.0);
+
+  input_trajectory_->header.stamp.sec += 5;
+  // Adjust the input of the turning axis to exceed π
+  input_trajectory_->points.back().positions = {1.5, 2.0, 3.5 - 2 * M_PI};
+  control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
+  EXPECT_TRUE(control_->UpdateActiveTrajectory());
+
+  // Since Open_loop_control is true, it is a state standard for the time you just sampled.
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.5);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 1.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.2);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -10.0);
+
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(5, 0);
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.5);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 2.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.2);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -5.0);
+
+  // Complete the follow -up once
+  ControllerState zero_velocity_state;
+  zero_velocity_state.actual.velocities = {0.0, 0.0, 0.0};
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(15, 0);
+  control_->TerminateControl(stamp, zero_velocity_state);
+  EXPECT_FALSE(control_->UpdateActiveTrajectory());
+
+  // After the trajectory tracking is completed, the current location may have changed due to sampling, speed control, etc. from the current state.
+  input_trajectory_->header.stamp = stamp;
+  input_trajectory_->points.back().positions = {1.0, 2.0, 3.0};
+  control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
+  EXPECT_TRUE(control_->UpdateActiveTrajectory());
+
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(5, 0);
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.5);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 1.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+}
+
+// Acquisition of the state to be
+TEST_F(OmniBaseTrajectoryControlTest, SampleDesiredStateWithoutOpenLoop) {
+  node_->set_parameter({rclcpp::Parameter("open_loop_control", false)});
+
+  std::vector<std::string> base_coordinates = {"odom_x", "odom_y", "odom_t"};
+  control_ = std::make_shared<OmniBaseTrajectoryControl>(node_, base_coordinates);
+  control_->Activate();
+
+  input_trajectory_->points.back().positions = {1.0, 2.0, 3.0};
+  input_trajectory_->points.back().velocities.clear();
+  input_trajectory_->points.back().accelerations.clear();
+  control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
+  EXPECT_TRUE(control_->UpdateActiveTrajectory());
+
+  std::vector<double> current_positions = {0.0, 0.0, 0.0};
+  std::vector<double> current_velocities = {0.0, 0.0, 0.0};
+
+  trajectory_msgs::msg::JointTrajectoryPoint desired_state;
+  bool before_last_point;
+  double time_from_point;
+
+  rclcpp::Time stamp = input_trajectory_->header.stamp;
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -10.0);
+
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(5, 0);
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.5);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 1.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.1);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -5.0);
+
+  input_trajectory_->header.stamp.sec += 5;
+  input_trajectory_->points.back().positions = {1.5, 2.0, -3.0};
+  control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
+  EXPECT_TRUE(control_->UpdateActiveTrajectory());
+
+  // Since Open_loop_control is False, sampling based on Current_positions/Velocities
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], 0.0);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.15);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], -0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -10.0);
+
+  stamp = rclcpp::Time(input_trajectory_->header.stamp) + rclcpp::Duration(5, 0);
+  EXPECT_TRUE(control_->SampleDesiredState(stamp, current_positions, current_velocities,
+                                           desired_state, before_last_point, time_from_point));
+  EXPECT_DOUBLE_EQ(desired_state.positions[0], 0.75);
+  EXPECT_DOUBLE_EQ(desired_state.positions[1], 1.0);
+  EXPECT_DOUBLE_EQ(desired_state.positions[2], -1.5);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[0], 0.15);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[1], 0.2);
+  EXPECT_DOUBLE_EQ(desired_state.velocities[2], -0.3);
+  EXPECT_TRUE(before_last_point);
+  EXPECT_DOUBLE_EQ(time_from_point, -5.0);
+}
+
+// The sort of the joint name is performed
 TEST_F(OmniBaseTrajectoryControlTest, PermutatedTrajectory) {
   input_trajectory_->joint_names = {input_trajectory_->joint_names[0],
                                     input_trajectory_->joint_names[2],
@@ -297,7 +488,7 @@ TEST_F(OmniBaseTrajectoryControlTest, PermutatedTrajectory) {
   EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.2);
 }
 
-// 旋回軸の補正が行われている
+// The turning axis is corrected
 TEST_F(OmniBaseTrajectoryControlTest, OverPISteerTrajectory) {
   input_trajectory_->points.back().positions = {1.0, 2.0, M_PI - 1.0};
   input_trajectory_->points.back().velocities.clear();
@@ -326,12 +517,12 @@ TEST_F(OmniBaseTrajectoryControlTest, OverPISteerTrajectory) {
   EXPECT_DOUBLE_EQ(desired_state.velocities[2], 0.2);
 }
 
-// ValidateTrajectoryの正常系
+// ValidateTrajectory normal system
 TEST_F(OmniBaseTrajectoryControlTest, ValidateTrajectory) {
   EXPECT_TRUE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックNG：Joint数不一致
+// JointTrajectory Effective check NG: Joint number mismatch
 TEST_F(OmniBaseTrajectoryControlTest, DoNotMatchJointsSize) {
   std::vector<std::string> base_coordinates = {"odom_x", "odom_y", "odom_t", "test_joint"};
   control_ = std::make_shared<OmniBaseTrajectoryControl>(node_, base_coordinates);
@@ -339,50 +530,50 @@ TEST_F(OmniBaseTrajectoryControlTest, DoNotMatchJointsSize) {
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックNG：positionの要素数がJoint数と不一致
+// Value check of JointTrajectory NG: Position elements are uneven to Joint number
 TEST_F(OmniBaseTrajectoryControlTest, DoNotMatchPositionSize) {
   input_trajectory_->points.back().positions.push_back(0.0);
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックNG：velocityの要素数がJoint数と不一致
+// Validity check of JointTrajectory NG: Velocity elements are uneven to Joint number
 TEST_F(OmniBaseTrajectoryControlTest, DoNotMatchVelocitySize) {
   input_trajectory_->points.back().velocities.push_back(0.0);
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックOK：velocityの要素数が空
+// Check OK of JointTrajectory OK: Velocity elements are empty
 TEST_F(OmniBaseTrajectoryControlTest, VelocityIsEmpty) {
   input_trajectory_->points.back().velocities.clear();
   EXPECT_TRUE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックNG：accelerationの要素数がJoint数と不一致
+// Validity check NG: Acceleration elements are uneven to the number of joints.
 TEST_F(OmniBaseTrajectoryControlTest, DoNotMatchAccelerationSize) {
   input_trajectory_->points.back().accelerations.push_back(0.0);
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックOK：accelerationの要素数が空
+// Check OK for JointTrajectory OK: Acceleration elements are empty
 TEST_F(OmniBaseTrajectoryControlTest, AccelerationIsEmpty) {
   input_trajectory_->points.back().accelerations.clear();
   EXPECT_TRUE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// JointTrajectoryの有効性チェックNG：time_from_startが逆行していれば無効
+// Value check of JointTrajectory NG: Disable if Time_from_start goes backwards
 TEST_F(OmniBaseTrajectoryControlTest, TimeFromStartIdGoingReverse) {
   input_trajectory_->points.push_back(input_trajectory_->points.back());
   input_trajectory_->points.back().time_from_start = rclcpp::Duration(1, 0);
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// 不正な関節名を含んでいる
+// Includes unauthorized joint name
 TEST_F(OmniBaseTrajectoryControlTest, IncludeInvalidJointName) {
   input_trajectory_->joint_names[0] = "unknown";
   EXPECT_FALSE(control_->ValidateTrajectory(*input_trajectory_));
 }
 
-// 停止状態＋時間経過で軌道追従を完了させる
+// Complete track follow -up over time + time passing
 TEST_F(OmniBaseTrajectoryControlTest, TerminateControl) {
   control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
   EXPECT_TRUE(control_->UpdateActiveTrajectory());
@@ -408,7 +599,7 @@ TEST_F(OmniBaseTrajectoryControlTest, TerminateControl) {
   EXPECT_FALSE(control_->UpdateActiveTrajectory());
 }
 
-// 停止状態の閾値を変化させる
+// Change the threshold in the stopped state
 TEST_F(OmniBaseTrajectoryControlTest, ChangeStopVelocityThreshold) {
   control_->AcceptTrajectory(input_trajectory_, Eigen::Vector3d::Zero());
   EXPECT_TRUE(control_->UpdateActiveTrajectory());

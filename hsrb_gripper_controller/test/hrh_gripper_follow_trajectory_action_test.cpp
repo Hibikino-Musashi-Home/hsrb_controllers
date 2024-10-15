@@ -30,11 +30,12 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief HRH grip -in control action test
+
 #include <gtest/gtest.h>
 
-#include <hsrb_servomotor_protocol/exxx_common.hpp>
-
 #include <hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp>
+#include <hsrb_servomotor_protocol/exxx_common.hpp>
 
 #include "utils.hpp"
 
@@ -62,7 +63,7 @@ TEST_F(FollowTrajectoryActionTest, ActionSucceeded) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 1回目のupdate時に軌道が確定するので，Updateを呼んだあとにpositionを目標位置付近に動かす
+  // Since the orbit is confirmed at the time of the first update, move the postion near the target position after calling Update.
   action_server_->Update(node_->now());
 
   std::vector<double> command_positions;
@@ -73,14 +74,15 @@ TEST_F(FollowTrajectoryActionTest, ActionSucceeded) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 60; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
     command_positions.push_back(hardware_->position->command());
   }
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
   double previous_command = 0.5;
   for (double command : command_positions) {
@@ -98,7 +100,7 @@ TEST_F(FollowTrajectoryActionTest, GoalToleranceViolated) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 1回目のupdate時に軌道が確定するので，Updateを呼んだあとにpositionを目標位置付近に動かす
+  // Since the orbit is confirmed at the time of the first update, move the postion near the target position after calling Update.
   action_server_->Update(node_->now());
 
   hardware_->position->set_current(1.06);
@@ -106,13 +108,14 @@ TEST_F(FollowTrajectoryActionTest, GoalToleranceViolated) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 60; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
   }
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(FollowTrajectoryActionTest, PreemptFromOutside) {
@@ -125,22 +128,23 @@ TEST_F(FollowTrajectoryActionTest, PreemptFromOutside) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 30; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
   }
   double last_command = hardware_->position->command();
 
-  // 外部からの割り込み
+  // External interrupt
   action_server_->PreemptActiveGoal();
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // 割り込みがあったので状態が変化しない
+  // The condition does not change because there was an interrupt
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
     EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
   }
@@ -156,12 +160,12 @@ TEST_F(FollowTrajectoryActionTest, CancelGoal) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 30; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
   }
   double last_command = hardware_->position->command();
 
-  // キャンセルを投げる
+  // Cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -169,20 +173,21 @@ TEST_F(FollowTrajectoryActionTest, CancelGoal) {
   rclcpp::spin_until_future_complete(node_, future_cancel);
 
   auto cancel_response = future_cancel.get();
-  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED);
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // 割り込みがあったので状態が変化しない
+  // The condition does not change because there was an interrupt
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
     EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
   }
 }
 
 TEST_F(FollowTrajectoryActionTest, PositionGoalTolerance) {
-  node_->set_parameter({rclcpp::Parameter("position_goal_tolerance", 0.07)});
+  node_->set_parameter({ rclcpp::Parameter("position_goal_tolerance", 0.07) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -191,7 +196,7 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 1回目のupdate時に軌道が確定するので，Updateを呼んだあとにpositionを目標位置付近に動かす
+  // Since the orbit is confirmed at the time of the first update, move the postion near the target position after calling Update.
   action_server_->Update(node_->now());
 
   hardware_->position->set_current(1.06);
@@ -199,17 +204,18 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTolerance) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 60; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
   }
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 }
 
 TEST_F(FollowTrajectoryActionTest, PositionGoalTimeTolerance) {
-  node_->set_parameter({rclcpp::Parameter("position_goal_time_tolerance", 0.15)});
+  node_->set_parameter({ rclcpp::Parameter("position_goal_time_tolerance", 0.15) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -218,7 +224,7 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTimeTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 1回目のupdate時に軌道が確定するので，Updateを呼んだあとにpositionを目標位置付近に動かす
+  // Since the orbit is confirmed at the time of the first update, move the postion near the target position after calling Update.
   action_server_->Update(node_->now());
 
   hardware_->position->set_current(1.06);
@@ -226,20 +232,21 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTimeTolerance) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 60; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
   }
 
-  // golt time toleranceを超えたあとにUpdateを呼んでいないので，abortedが飛んでこないはず
+  // After exceeding Goal_time_Tolerance, I did not call Update, but in Humble, it is Status_aborted.
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_FALSE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(FollowTrajectoryActionTest, InvalidJointName) {
   ActionType::Goal goal;
   goal.trajectory = MakeTrajectory();
-  goal.trajectory.joint_names = {"invalid"};
+  goal.trajectory.joint_names = { "invalid" };
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
@@ -250,7 +257,7 @@ TEST_F(FollowTrajectoryActionTest, InvalidJointName) {
 TEST_F(FollowTrajectoryActionTest, InvalidJointNumbers) {
   ActionType::Goal goal;
   goal.trajectory = MakeTrajectory();
-  goal.trajectory.joint_names = {kHandJointName, kHandJointName};
+  goal.trajectory.joint_names = { kHandJointName, kHandJointName };
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
@@ -292,16 +299,17 @@ TEST_F(FollowTrajectoryActionTest, EmptyTrajectory) {
 }
 
 TEST_F(FollowTrajectoryActionTest, AcceptTrajectoryTopic) {
-  auto publisher = node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-      "~/joint_trajectory", rclcpp::SystemDefaultsQoS());
+  auto publisher =
+      node_->create_publisher<trajectory_msgs::msg::JointTrajectory>("~/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
+  publisher->on_activate();
   publisher->publish(MakeTrajectory());
 
   std::vector<double> command_positions;
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 60; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
     command_positions.push_back(hardware_->position->command());
   }
@@ -316,11 +324,11 @@ TEST_F(FollowTrajectoryActionTest, AcceptTrajectoryTopic) {
 }
 
 TEST_F(FollowTrajectoryActionTest, RejectTrajectoryTopic) {
-  auto publisher = node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-      "~/joint_trajectory", rclcpp::SystemDefaultsQoS());
+  auto publisher =
+      node_->create_publisher<trajectory_msgs::msg::JointTrajectory>("~/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
   auto trajectory = MakeTrajectory();
-  trajectory.joint_names = {"invalid"};
+  trajectory.joint_names = { "invalid" };
   publisher->publish(trajectory);
 
   double last_command = hardware_->position->command();
@@ -328,7 +336,7 @@ TEST_F(FollowTrajectoryActionTest, RejectTrajectoryTopic) {
   rclcpp::WallRate rate(100.0);
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
-    rclcpp::spin_some(node_);
+    rclcpp::spin_some(node_->get_node_base_interface());
     action_server_->Update(node_->now());
     EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
   }
@@ -336,6 +344,92 @@ TEST_F(FollowTrajectoryActionTest, RejectTrajectoryTopic) {
 
 TEST_F(FollowTrajectoryActionTest, TargetMode) {
   EXPECT_EQ(action_server_->target_mode(), hsrb_servomotor_protocol::kDriveModeHandPosition);
+}
+
+TEST_F(FollowTrajectoryActionTest, WithoutOpenLoopControl) {
+  node_->set_parameter({ rclcpp::Parameter("open_loop_control", false) });
+  EXPECT_TRUE(action_server_->Init(node_));
+
+  auto publisher =
+      node_->create_publisher<trajectory_msgs::msg::JointTrajectory>("~/joint_trajectory", rclcpp::SystemDefaultsQoS());
+
+  const auto trajectory = MakeTrajectory();
+  publisher->publish(trajectory);
+
+  std::vector<double> command_positions;
+  rclcpp::WallRate rate(100.0);
+  for (int i = 0; i < 25; ++i) {
+    rate.sleep();
+    rclcpp::spin_some(node_->get_node_base_interface());
+    action_server_->Update(node_->now());
+    command_positions.push_back(hardware_->position->command());
+  }
+
+  publisher->publish(trajectory);
+  for (int i = 0; i < 60; ++i) {
+    rate.sleep();
+    rclcpp::spin_some(node_->get_node_base_interface());
+    action_server_->Update(node_->now());
+    command_positions.push_back(hardware_->position->command());
+  }
+
+  // It is a behavior that it increases monotonously from the current value (0.5) and increases from the current value again on the way.
+  uint32_t command_jumping = 0;
+  double previous_command = 0.5;
+  for (double command : command_positions) {
+    EXPECT_LE(command, 1.0);
+    if (command < previous_command) {
+      ++command_jumping;
+    }
+    previous_command = command;
+  }
+  EXPECT_EQ(command_jumping, 1);
+
+  // Since it is 10 Hz 10 frames with 1RAD/S, the expected value is 0.1, and if the loop is unstable, it will shift, so give it a buffer appropriately.
+  EXPECT_NEAR(command_positions[15] - command_positions[5], 0.1, 0.1);
+  // The speed should be the same in the second half
+  EXPECT_NEAR(command_positions[50] - command_positions[40], 0.1, 0.1);
+}
+TEST_F(FollowTrajectoryActionTest, WithOpenLoopControl) {
+  node_->set_parameter({ rclcpp::Parameter("open_loop_control", true) });
+  EXPECT_TRUE(action_server_->Init(node_));
+  EXPECT_TRUE(action_server_->Activate());
+
+  auto publisher =
+      node_->create_publisher<trajectory_msgs::msg::JointTrajectory>("~/joint_trajectory", rclcpp::SystemDefaultsQoS());
+  publisher->on_activate();
+
+  const auto trajectory = MakeTrajectory();
+  publisher->publish(trajectory);
+
+  std::vector<double> command_positions;
+  rclcpp::WallRate rate(100.0);
+  for (int i = 0; i < 25; ++i) {
+    rate.sleep();
+    rclcpp::spin_some(node_->get_node_base_interface());
+    action_server_->Update(node_->now());
+    command_positions.push_back(hardware_->position->command());
+  }
+
+  publisher->publish(trajectory);
+  for (int i = 0; i < 60; ++i) {
+    rate.sleep();
+    rclcpp::spin_some(node_->get_node_base_interface());
+    action_server_->Update(node_->now());
+    command_positions.push_back(hardware_->position->command());
+  }
+
+  // It continues to increase monotonously from the current value (0.5), but the speed should change at 25 pieces.
+  double previous_command = 0.5;
+  for (double command : command_positions) {
+    EXPECT_LE(command, 1.0);
+    EXPECT_GE(command, previous_command);
+    previous_command = command;
+  }
+  // Since it is 10 Hz 10 frames with 1RAD/S, the expected value is 0.1, and if the loop is unstable, it will shift, so give it a buffer appropriately.
+  EXPECT_NEAR(command_positions[15] - command_positions[5], 0.1, 0.1);
+  // The second half should be halved
+  EXPECT_NEAR(command_positions[50] - command_positions[40], 0.05, 0.05);
 }
 
 }  // namespace hsrb_gripper_controller

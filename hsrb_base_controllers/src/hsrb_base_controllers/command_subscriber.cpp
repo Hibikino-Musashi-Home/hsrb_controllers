@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file command_subscriber.cpp
+/// @brief Input command control class for controlling all -level bogie control
 #include <hsrb_base_controllers/command_subscriber.hpp>
 
 #include <rclcpp_action/create_server.hpp>
@@ -37,28 +39,30 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// アクション状態更新周波数デフォルト値[Hz]
+// Action status Update frequency default value [Hz]
 constexpr double kDefaultActionMonitorRate = 100.0;
 }
 
 namespace hsrb_base_controllers {
 
-/// 入力指令クラス
-CommandSubscriber::CommandSubscriber(const rclcpp::Node::SharedPtr& node,
+/// Input command class
+CommandSubscriber::CommandSubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                      IControllerCommandInterface* controller)
     : node_(node), controller_(controller) {}
 
 
-/// 入力速度指令クラスの初期化
-CommandVelocitySubscriber::CommandVelocitySubscriber(const rclcpp::Node::SharedPtr& node,
+/// Introduction of input speed command class
+CommandVelocitySubscriber::CommandVelocitySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                      IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
+  // Diff_drive_controller QOS is SystemDefaults, Steering_controllers generally Sensordordataqos
+  // Adopts Sensordataqos because it is important to get the latest values ​​in a timely manner
   velocity_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
-      "~/command_velocity", 1,
+      "~/cmd_vel", rclcpp::SensorDataQoS(),
       std::bind(&CommandVelocitySubscriber::CommandVelocityCallback, this, std::placeholders::_1));
 }
 
-/// 入力速度指令コールバック
+/// Input speed command callback
 void CommandVelocitySubscriber::CommandVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
   if (controller_->IsAcceptable()) {
     controller_->UpdateVelocity(msg);
@@ -68,16 +72,17 @@ void CommandVelocitySubscriber::CommandVelocityCallback(const geometry_msgs::msg
 }
 
 
-/// 入力軌道指令クラスの初期化
-CommandTrajectorySubscriber::CommandTrajectorySubscriber(const rclcpp::Node::SharedPtr& node,
+/// Input orbital command class initialization
+CommandTrajectorySubscriber::CommandTrajectorySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                          IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
+  // Match the QOS of Joint_trajectory_controller
   trajectory_subscriber_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
-      "~/joint_trajectory", 1,
+      "~/joint_trajectory", rclcpp::SensorDataQoS(),
       std::bind(&CommandTrajectorySubscriber::CommandTrajectoryCallback, this, std::placeholders::_1));
 }
 
-/// 入力軌道指令コールバック
+/// Input orbital command callback
 void CommandTrajectorySubscriber::CommandTrajectoryCallback(
     const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) {
   if (!controller_->IsAcceptable()) {
@@ -90,8 +95,8 @@ void CommandTrajectorySubscriber::CommandTrajectoryCallback(
 }
 
 
-/// 入力軌道アクション指令クラスの初期化
-TrajectoryActionServer::TrajectoryActionServer(const rclcpp::Node::SharedPtr& node,
+/// Input orbital action command class initialization
+TrajectoryActionServer::TrajectoryActionServer(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                const std::vector<std::string>& cordinates,
                                                IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller), cordinates_(cordinates) {

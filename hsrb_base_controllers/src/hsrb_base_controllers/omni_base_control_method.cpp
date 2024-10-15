@@ -30,30 +30,33 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_control_method.cpp
+/// @brief Omnidistant bogie control mode class
+
 #include <hsrb_base_controllers/omni_base_control_method.hpp>
 
 #include "utils.hpp"
 
 namespace {
-// 台車速度指定途絶判定時間のデフォルト値[s]
+// Default value of the bogie speed specified default time [S]
 constexpr double kDefaultCommandTimeout = 0.5;
-// 停止と判定する速度の大きさの閾値
+// The threshold of the speed determined to be stopped
 constexpr double kStopVelocityThreshold = 0.001;
-// 経路追従停止と判定する時間マージン[s]
+// Time margin to stop tracking route [S]
 constexpr double kStopTimeMergin = 0.2;
-// 軌道追従のズレに対する制御Pゲイン
+// Control for the gap in track follow -up P gain
 constexpr double kDefaultPGain = 1.0;
 
-// 記述された順番が異なる２つの名前配列を並び替えるための配列を作成する
+// Create an array for sorting two named sequences with different described order
 std::vector<uint32_t> MakePermutationVector(
     const std::vector<std::string>& names1,
     const std::vector<std::string>& names2) {
-  // 入力配列のサイズが合わなければ終了
+  // If the size of the input array does not match, it will end
   if (names1.size() != names2.size()) {
     return std::vector<uint32_t>();
   }
 
-  // 一致する名前を探し、並び替え用の配列を作成
+  // Find a matching name and create an array for sorting
   std::vector<uint32_t> permutation_vector(names1.size());
   for (std::vector<std::string>::const_iterator it1 = names1.begin(); it1 != names1.end(); ++it1) {
     std::vector<std::string>::const_iterator it2 = std::find(names2.begin(), names2.end(), *it1);
@@ -71,9 +74,9 @@ std::vector<uint32_t> MakePermutationVector(
 
 namespace hsrb_base_controllers {
 
-OmniBaseVelocityControl::OmniBaseVelocityControl(const rclcpp::Node::SharedPtr& node)
+OmniBaseVelocityControl::OmniBaseVelocityControl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : node_(node) {
-  // 速度指令値途絶判定時間を取得
+  // Acquire the speed command value cut judgment time
   command_timeout_ = GetParameter(node, "command_timeout", kDefaultCommandTimeout);
   if (command_timeout_ <= 0.0) {
     RCLCPP_INFO(
@@ -81,18 +84,18 @@ OmniBaseVelocityControl::OmniBaseVelocityControl(const rclcpp::Node::SharedPtr& 
       "command_timeout must be positive. Use default value [%lf]", kDefaultCommandTimeout);
     command_timeout_ = kDefaultCommandTimeout;
   }
-  // コンストラクタでも呼んで，念の為初期化しておく
+  // Call it by constructor and initialize it just in case
   Activate();
 }
 
-// 初期化する
+// Initialize
 void OmniBaseVelocityControl::Activate() {
   std::lock_guard<std::mutex> lock(command_mutex_);
   command_velocity_ = Eigen::Vector3d::Zero();
   last_velocity_subscribed_time_ = node_->get_clock()->now();
 }
 
-// 指令速度を取得する
+// Get command speed
 Eigen::Vector3d OmniBaseVelocityControl::GetOutputVelocity() {
   std::lock_guard<std::mutex> lock(command_mutex_);
 
@@ -103,7 +106,7 @@ Eigen::Vector3d OmniBaseVelocityControl::GetOutputVelocity() {
   return output_velocity;
 }
 
-// 指令速度を更新する
+// Update the command speed
 void OmniBaseVelocityControl::UpdateCommandVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) {
   std::lock_guard<std::mutex> lock(command_mutex_);
 
@@ -112,32 +115,34 @@ void OmniBaseVelocityControl::UpdateCommandVelocity(const geometry_msgs::msg::Tw
 }
 
 
-// コンストラクタ，パラメータの初期化を行う
+// Initialize constructors and parameters
 OmniBaseTrajectoryControl::OmniBaseTrajectoryControl(
-    const rclcpp::Node::SharedPtr& node,
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
     const std::vector<std::string>& cordinates) : node_(node), coordinate_names_(cordinates) {
   stop_velocity_threshold_ = GetPositiveParameter(node, "stop_velocity_threshold", kStopVelocityThreshold);
   feedback_gain_(kIndexBaseX) = GetPositiveParameter(node, "odom_x.p_gain", kDefaultPGain);
   feedback_gain_(kIndexBaseY) = GetPositiveParameter(node, "odom_y.p_gain", kDefaultPGain);
   feedback_gain_(kIndexBaseTheta) = GetPositiveParameter(node, "odom_t.p_gain", kDefaultPGain);
+  open_loop_control_ = GetParameter(node, "open_loop_control", false);
 }
 
-// 初期化
+// Initialization
 void OmniBaseTrajectoryControl::Activate() {
   trajectory_ptr_ = std::make_shared<joint_trajectory_controller::Trajectory>();
   trajectory_active_ptr_ = &trajectory_ptr_;
   trajectory_msg_buffer_.writeFromNonRT(std::shared_ptr<trajectory_msgs::msg::JointTrajectory>());
+  has_last_command_state_ = false;
 }
 
-// 指令速度を取得する
+// Get command speed
 Eigen::Vector3d OmniBaseTrajectoryControl::GetOutputVelocity(
     const ControllerState& base_state) {
-  // 指令速度に位置差分に比例する項を加え目標速度とする
+  // Add a term that is proportional to the position difference in the command speed and make it a target speed.
   const Eigen::Vector3d desired(base_state.desired.velocities.data());
   const Eigen::Vector3d error(base_state.error.positions.data());
   Eigen::Vector3d output_velocity = desired + feedback_gain_.cwiseProduct(error);
 
-  // 基準座標系の速度を上体座標系に変換
+  // Convert the speed of the standard coordinate system to the upper body coordinate system
   const double current_yaw = base_state.actual.positions.at(kIndexBaseTheta);
   Eigen::Matrix3d robot_to_floor;
   robot_to_floor <<
@@ -149,7 +154,7 @@ Eigen::Vector3d OmniBaseTrajectoryControl::GetOutputVelocity(
   return output_velocity;
 }
 
-  // 追従中の軌道を更新する，軌道が存在するならtrueを返す
+  // Update the track during follow -up, return True if there is a trajectory
 bool OmniBaseTrajectoryControl::UpdateActiveTrajectory() {
   const auto current_msg = trajectory_ptr_->get_trajectory_msg();
   const auto new_msg = trajectory_msg_buffer_.readFromRT();
@@ -167,7 +172,7 @@ bool OmniBaseTrajectoryControl::UpdateActiveTrajectory() {
   }
 }
 
-// 軌道追従の目標状態を取得
+// Get the target status of track tracking
 bool OmniBaseTrajectoryControl::SampleDesiredState(
     const rclcpp::Time& time,
     const std::vector<double>& current_positions,
@@ -176,26 +181,35 @@ bool OmniBaseTrajectoryControl::SampleDesiredState(
     bool& before_last_point,
     double& time_from_point) {
   if (!(*trajectory_active_ptr_)->is_sampled_already()) {
-    trajectory_msgs::msg::JointTrajectoryPoint current_state;
-    current_state.positions = current_positions;
-    current_state.velocities = current_velocities;
-    (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, current_state);
+    if (open_loop_control_ && has_last_command_state_) {
+      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, last_command_state_);
+    } else {
+      trajectory_msgs::msg::JointTrajectoryPoint current_state;
+      current_state.positions = current_positions;
+      current_state.velocities = current_velocities;
+      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, current_state);
+    }
   }
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator start_segment_it;
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator end_segment_it;
-  const bool is_ok = (*trajectory_active_ptr_)->sample(time, desired_state, start_segment_it, end_segment_it);
+  const bool is_ok = (*trajectory_active_ptr_)->sample(time,
+      joint_trajectory_controller::interpolation_methods::DEFAULT_INTERPOLATION,
+      desired_state, start_segment_it, end_segment_it);
   if (is_ok) {
     before_last_point = end_segment_it != (*trajectory_active_ptr_)->end();
-    const rclcpp::Time start_stamp = (*trajectory_active_ptr_)->get_trajectory_start_time();
+    const rclcpp::Time start_stamp = (*trajectory_active_ptr_)->time_from_start();
     const rclcpp::Time end_stamp = start_stamp + start_segment_it->time_from_start;
     time_from_point = time.seconds() - end_stamp.seconds();
+
+    last_command_state_ = desired_state;
+    has_last_command_state_ = true;
   }
   return is_ok;
 }
 
-// 入力軌道指令を検証する
+// Verify the input orbit command
 bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) const {
-  // ジョイント名が合っていなければ無効
+  // Disable if the joint name is not right
   if (trajectory.joint_names.size() != coordinate_names_.size()) {
     RCLCPP_ERROR(node_->get_logger(), "Trajectory's joint_size mismatch.");
     return false;
@@ -207,27 +221,27 @@ bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::J
     }
   }
 
-  // JointTrajectoryPoint毎に中身が有効であるかチェック
+  // Check if the contents are valid for each JointTrajectoryPoint
   double last_time = -std::numeric_limits<double>::max();
   for (const auto& point : trajectory.points) {
-    // positionの要素数がジョイント数と一致していなければ無効
+    // Disable if the number of elements of Position does not match the joint number
     if (point.positions.size() != coordinate_names_.size()) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's position size is wrong.");
       return false;
     }
-    // velocityの要素数がジョイント数と一致していなければ無効
-    // velocityが空ならば許容
+    // Disable if the number of Velocity does not match the joint number
+    // If Velocity is empty, accept
     if (!point.velocities.empty() && point.velocities.size() != coordinate_names_.size()) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's velocity size is wrong.");
       return false;
     }
-    // accelerationの要素数がジョイント数と一致していなければ無効
-    // accelerationが空ならば許容
+    // Disabled if the number of Acceleration elements does not match the joint number
+    // If Acceleration is empty, accept
     if (!point.accelerations.empty() && point.accelerations.size() != coordinate_names_.size()) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's acceleration size is wrong.");
       return false;
     }
-    // time_from_startが逆行していれば無効
+    // Disable if Time_from_start is going backwards
     double time_from_start = static_cast<rclcpp::Duration>(point.time_from_start).seconds();
     if (time_from_start - last_time <= 0.0) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's time_from_start is going reverse.");
@@ -238,21 +252,21 @@ bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::J
   return true;
 }
 
-// 追従軌道を更新する
+// Update the track
 void OmniBaseTrajectoryControl::AcceptTrajectory(
     const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
     const Eigen::Vector3d& base_positions) {
-  // 入力軌道の点が無い場合は停止させる
+  // If there is no point in the input orbit, stop
   if (trajectory->points.empty()) {
     ResetCurrentTrajectory();
     return;
   }
 
-  // 入力msgの並べ替え配列の作成を行う
+  // Create replacement arrays of input MSG
   const std::vector<std::string> trajectory_joint_names = trajectory->joint_names;
   const std::vector<uint32_t> permutation_vector = MakePermutationVector(coordinate_names_, trajectory_joint_names);
 
-  // 軸の名前の記述順を考慮した軌道の作成を行う
+  // Create tracks that take into account the order of the name of the axis
   trajectory_msgs::msg::JointTrajectory permutated_trajectory;
   permutated_trajectory.header = trajectory->header;
   permutated_trajectory.joint_names = trajectory->joint_names;
@@ -272,8 +286,13 @@ void OmniBaseTrajectoryControl::AcceptTrajectory(
     point.time_from_start = input_point.time_from_start;
     permutated_trajectory.points.push_back(point);
   }
-  // 旋回軸の補正
-  double prev_position = base_positions[kIndexBaseTheta];
+  // Correction of turning axis
+  double prev_position;
+  if (open_loop_control_ && has_last_command_state_) {
+    prev_position = last_command_state_.positions[kIndexBaseTheta];
+  } else {
+    prev_position = base_positions[kIndexBaseTheta];
+  }
   for (auto& point : permutated_trajectory.points) {
     double diff = angles::shortest_angular_distance(prev_position, point.positions[kIndexBaseTheta]);
     point.positions[kIndexBaseTheta] = prev_position + diff;
@@ -283,7 +302,7 @@ void OmniBaseTrajectoryControl::AcceptTrajectory(
   trajectory_msg_buffer_.writeFromNonRT(std::make_shared<trajectory_msgs::msg::JointTrajectory>(permutated_trajectory));
 }
 
-// 条件を満たしていたら軌道追従を終了させる
+// If you meet the conditions, end the track follow -up
 void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const ControllerState& base_state) {
   if (!trajectory_active_ptr_ || !(*trajectory_active_ptr_)->has_trajectory_msg()) {
     return;
@@ -292,9 +311,9 @@ void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const
     return;
   }
 
-  const double time_from_start = (time - (*trajectory_active_ptr_)->get_trajectory_start_time()).seconds();
+  const double time_from_start = (time - (*trajectory_active_ptr_)->time_from_start()).seconds();
   const Eigen::Vector3d current_velocity(base_state.actual.velocities.data());
-  // 軌道追従の追従予定時間を過ぎている，かつ現在静止状態の時，軌道追従を終了させる
+  // Finish the trajectory following the scheduled tracking time of the orbital follow
   const rclcpp::Duration command_trajectory_period = (--((*trajectory_active_ptr_)->end()))->time_from_start;
   if ((time_from_start > command_trajectory_period.seconds() + kStopTimeMergin) &&
       (current_velocity.norm() < stop_velocity_threshold_)) {
@@ -302,11 +321,12 @@ void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const
   }
 }
 
-// 現在追従中の軌道をリセットする
+// Reset the trajectory currently following
 void OmniBaseTrajectoryControl::ResetCurrentTrajectory() {
   trajectory_msgs::msg::JointTrajectory empty_msg;
   empty_msg.header.stamp = rclcpp::Time(0);
   trajectory_msg_buffer_.writeFromNonRT(std::make_shared<trajectory_msgs::msg::JointTrajectory>(empty_msg));
+  has_last_command_state_ = false;
 }
 
 }  // namespace hsrb_base_controllers

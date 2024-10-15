@@ -30,66 +30,21 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_controller.cpp
+/// @brief Omnidistant bogie controller class
+
 #include <hsrb_base_controllers/omni_base_controller.hpp>
 
 #include <pluginlib/class_list_macros.hpp>
 
 #include "utils.hpp"
 
+
 namespace hsrb_base_controllers {
 
-controller_interface::return_type OmniBaseController::init(const std::string& controller_name) {
-  const auto ret = ControllerInterface::init(controller_name);
-  if (ret != controller_interface::return_type::OK) {
-    return ret;
-  }
-
-  if (InitImpl()) {
-    return controller_interface::return_type::OK;
-  } else {
-    return controller_interface::return_type::ERROR;
-  }
-}
-
-bool OmniBaseController::InitImpl() {
-  // 制御する台車の座標軸名を取得
-  const auto base_coordinate_names = GetParameter<std::vector<std::string>>(get_node(), "base_coordinates", {});
-  if (base_coordinate_names.size() != kNumBaseCoordinateIDs) {
-    RCLCPP_ERROR(get_node()->get_logger(), "The size of joints must be three.");
-    return false;
-  }
-  default_tolerances_ = joint_trajectory_controller::get_segment_tolerances(*get_node(), base_coordinate_names);
-
-  // 速度のサブスクライバをセット
-  velocity_subscriber_ = std::make_shared<CommandVelocitySubscriber>(get_node(), this);
-  // 軌道のサブスクライバをセット
-  trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(get_node(), this);
-  // アクションサーバ立ちあげ
-  trajectory_action_ = std::make_shared<TrajectoryActionServer>(get_node(), base_coordinate_names, this);
-
-  // Jointコントローラクラス
-  joint_controller_ = std::make_shared<OmniBaseJointController>(get_node());
-  if (!joint_controller_->Init()) {
-    RCLCPP_ERROR(get_node()->get_logger(), "Initializing OmniBaseJointController is failed.");
-    return false;
-  }
-
-  // ホイールオドメトリのパブリッシャをセット
-  wheel_odometry_ = std::make_shared<WheelOdometry>(get_node(), joint_controller_->omnibase_size());
-  // 台車オドメトリのパブリッシャをセット
-  base_odometry_ = std::make_shared<BaseOdometry>(get_node());
-
-  // コントローラを生成
-  velocity_control_ = std::make_shared<OmniBaseVelocityControl>(get_node());
-  trajectory_control_ = std::make_shared<OmniBaseTrajectoryControl>(get_node(), base_coordinate_names);
-
-  // 内部関節状態のパブリッシャをセット
-  base_state_publisher_ = std::make_shared<StatePublisher>(
-      get_node(), "~/state", base_coordinate_names);
-  joint_state_publisher_ = std::make_shared<StatePublisher>(
-      get_node(), "~/internal_state", joint_controller_->joint_names());
-
-  return true;
+controller_interface::CallbackReturn OmniBaseController::on_init() {
+  // There is all processing in ON_CONFIGURE and ON_ACTIVATE that do nothing
+  return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::InterfaceConfiguration OmniBaseController::command_interface_configuration() const {
@@ -106,32 +61,31 @@ controller_interface::InterfaceConfiguration OmniBaseController::state_interface
   return conf;
 }
 
-controller_interface::return_type OmniBaseController::update() {
-  if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {
+controller_interface::return_type OmniBaseController::update(
+    const rclcpp::Time& current_time, const rclcpp::Duration& period) {
+  if (get_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {
     return controller_interface::return_type::OK;
   }
 
-  // 台車の各軸の位置・速度取得
+  // Acquire the position / speed of each axis of the bogie
   Eigen::Vector3d joint_positions;
   Eigen::Vector3d joint_velocities;
   if (!joint_controller_->GetJointPositions(joint_positions) ||
       !joint_controller_->GetJointVelocities(joint_velocities)) {
     return controller_interface::return_type::ERROR;
   }
-  const auto current_time = get_node()->get_clock()->now();
-  const double period = (current_time - last_update_time_).seconds();
-  last_update_time_ = current_time;
 
-  // オドメトリの更新
-  wheel_odometry_->UpdateOdometry(period, joint_positions, joint_velocities);
-  base_odometry_->UpdateOdometry(period, wheel_odometry_->odometry(), wheel_odometry_->velocity());
+  const double period_sec = period.seconds();
+  // Update of odmetry
+  wheel_odometry_->UpdateOdometry(period_sec, joint_positions, joint_velocities);
+  base_odometry_->UpdateOdometry(period_sec, wheel_odometry_->odometry(), wheel_odometry_->velocity());
 
-  // 台車の追従状態をアップデート
+  // Update the truck following
   ControllerBaseState base_state(base_odometry_->odometry(), base_odometry_->velocity());
 
   Eigen::Vector3d output_velocity = Eigen::Vector3d::Zero();
   if (trajectory_control_->UpdateActiveTrajectory()) {
-    // 軌道追従
+    // Tracking
     trajectory_msgs::msg::JointTrajectoryPoint desired_state;
     bool before_last_point;
     double time_from_point;
@@ -153,12 +107,12 @@ controller_interface::return_type OmniBaseController::update() {
       }
     }
   } else {
-    // 速度追従
+    // Speed ​​tracking
     output_velocity = velocity_control_->GetOutputVelocity();
   }
-  joint_controller_->SetJointCommand(period, output_velocity);
+  joint_controller_->SetJointCommand(period_sec, output_velocity);
 
-  // 台車の現状態(指令値、現在地、差分)をパブリッシュ
+  // Publish the current state of the bogie (command value, current location, difference)
   const ControllerJointState joint_state(joint_positions,
                                          joint_velocities,
                                          joint_controller_->desired_steer_pos(),
@@ -166,7 +120,7 @@ controller_interface::return_type OmniBaseController::update() {
   joint_state_publisher_->Publish(joint_state, current_time);
   base_state_publisher_->Publish(base_state, current_time);
 
-  // ホイールオドメトリ、TFをパブリッシュ
+  // Wheel and dometry, publish TF
   wheel_odometry_->PublishOdometry(current_time);
 
   trajectory_control_->TerminateControl(current_time, base_state);
@@ -174,18 +128,52 @@ controller_interface::return_type OmniBaseController::update() {
   return controller_interface::return_type::OK;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-OmniBaseController::on_configure(const rclcpp_lifecycle::State& previous_state) {
-  // 特になにもしない，initとactivateに全ての処理がある
-  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+controller_interface::CallbackReturn OmniBaseController::on_configure(const rclcpp_lifecycle::State& previous_state) {
+  // Obtain the coordinates axis of the controlled bogie
+  const auto base_coordinate_names = GetParameter<std::vector<std::string>>(get_node(), "base_coordinates", {});
+  if (base_coordinate_names.size() != kNumBaseCoordinateIDs) {
+    RCLCPP_ERROR(get_node()->get_logger(), "The size of joints must be three.");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  default_tolerances_ = get_segment_tolerances(get_node(), base_coordinate_names);
+
+  // Set a speed subclan
+  velocity_subscriber_ = std::make_shared<CommandVelocitySubscriber>(get_node(), this);
+  // Set track subclan
+  trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(get_node(), this);
+  // Action server standing up
+  trajectory_action_ = std::make_shared<TrajectoryActionServer>(get_node(), base_coordinate_names, this);
+
+  // Joint controller class
+  joint_controller_ = std::make_shared<OmniBaseJointController>(get_node());
+  if (!joint_controller_->Init()) {
+    RCLCPP_ERROR(get_node()->get_logger(), "Initializing OmniBaseJointController is failed.");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
+  // Set a wheeldeodometry publisher
+  wheel_odometry_ = std::make_shared<WheelOdometry>(get_node(), joint_controller_->omnibase_size());
+  // Set a bogie Odometri's publisher
+  base_odometry_ = std::make_shared<BaseOdometry>(get_node());
+
+  // Generate a controller
+  velocity_control_ = std::make_shared<OmniBaseVelocityControl>(get_node());
+  trajectory_control_ = std::make_shared<OmniBaseTrajectoryControl>(get_node(), base_coordinate_names);
+
+  // Set a publisher in the internal joint
+  base_state_publisher_ = std::make_shared<StatePublisher>(
+      get_node(), "~/state", base_coordinate_names);
+  joint_state_publisher_ = std::make_shared<StatePublisher>(
+      get_node(), "~/internal_state", joint_controller_->joint_names());
+
+  return controller_interface::CallbackReturn::SUCCESS;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-OmniBaseController::on_activate(const rclcpp_lifecycle::State& previous_state) {
+controller_interface::CallbackReturn OmniBaseController::on_activate(const rclcpp_lifecycle::State& previous_state) {
   if (!joint_controller_->Activate(command_interfaces_, state_interfaces_)) {
-    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+    return controller_interface::CallbackReturn::ERROR;
   }
-  // JointTrajectoryControllerに合わせて，ここでActivate
+  // ACTIVATE here according to JointTrajectoryController
   velocity_control_->Activate();
   trajectory_control_->Activate();
 
@@ -194,26 +182,24 @@ OmniBaseController::on_activate(const rclcpp_lifecycle::State& previous_state) {
   wheel_odometry_->set_last_transform_published_time(current_time);
   joint_state_publisher_->set_last_state_published_time(current_time);
   base_state_publisher_->set_last_state_published_time(current_time);
-  last_update_time_ = current_time;
 
-  // 立ち上げ時にオドメトリを初期化
+  // Initialize the odmetry at the time of launch
   base_odometry_->InitOdometry();
 
-  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return controller_interface::CallbackReturn::SUCCESS;
 }
 
-rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-OmniBaseController::on_deactivate(const rclcpp_lifecycle::State& previous_state) {
-  // コントローラ立ち下げ時は現在のアクションゴールをリセット
+controller_interface::CallbackReturn OmniBaseController::on_deactivate(const rclcpp_lifecycle::State& previous_state) {
+  // Reset the current action goal when the controller is down
   trajectory_action_->PreemptActiveGoal();
-  // 指令速度をクリア
+  // Clear command speed
   const auto zero_velocity = std::make_shared<geometry_msgs::msg::Twist>();
   velocity_control_->UpdateCommandVelocity(zero_velocity);
-  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return controller_interface::CallbackReturn::SUCCESS;
 }
 
 bool OmniBaseController::IsAcceptable() {
-  return get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
+  return get_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
 }
 
 void OmniBaseController::UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) {
@@ -240,19 +226,18 @@ int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
   Convert(state.error, error);
 
   if (before_last_point) {
-    // 軌道追従中なので，経路がズレていないかチェックするだけ
+    // Since the trajectory is being followed, just check if the route is out of order.
     for (uint32_t i = 0; i < active_tolerances_.state_tolerance.size(); ++i) {
-      if (!joint_trajectory_controller::check_state_tolerance_per_joint(error, i,
-                                                                        active_tolerances_.state_tolerance[i])) {
+      if (!check_state_tolerance_per_joint(error, i, active_tolerances_.state_tolerance[i])) {
+        RCLCPP_ERROR(get_node()->get_logger(), "Path tolerance violated.");
         return control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED;
       }
     }
   } else {
-    // ゴールしたかのチェック，時間内なら何もせずに待つ
+    // Check if you finished the goal, wait without doing anything within time
     bool abort = false;
     for (uint32_t i = 0; i < active_tolerances_.goal_state_tolerance.size(); ++i) {
-      if (!joint_trajectory_controller::check_state_tolerance_per_joint(
-              error, i, active_tolerances_.goal_state_tolerance[i])) {
+      if (!check_state_tolerance_per_joint(error, i, active_tolerances_.goal_state_tolerance[i])) {
         abort = true;
         break;
       }
@@ -260,13 +245,14 @@ int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
     if (!abort) {
       return control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL;
     } else if (active_tolerances_.goal_time_tolerance != 0.0) {
-      // 0.0との!=は危険だが，デフォルト値が0.0なので，これでいく
+      // It is dangerous to say 0.0, but the default value is 0.0, so this is
       if (time_from_trajectory_end > active_tolerances_.goal_time_tolerance) {
+        RCLCPP_ERROR(get_node()->get_logger(), "Goal tolerance violated.");
         return control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED;
       }
     }
   }
-  // 定義されているエラーコードは0以下なので，どれでもないを示すために正の数を返す
+  // Since the defined error code is 0 or less, return the positive number to indicate nothing.
   return 1;
 }
 

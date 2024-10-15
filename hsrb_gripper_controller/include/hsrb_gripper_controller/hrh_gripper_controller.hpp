@@ -32,48 +32,51 @@ DAMAGE.
 */
 #ifndef HSRB_GRIPPER_CONTROLLER_HRH_GRIPPER_CONTROLLER_HPP_
 #define HSRB_GRIPPER_CONTROLLER_HRH_GRIPPER_CONTROLLER_HPP_
-
 #include <memory>
 #include <string>
 #include <vector>
 
-#include <controller_interface/controller_interface.hpp>
 #include <realtime_tools/realtime_buffer.h>
 
-#include "hsrb_gripper_controller/hrh_gripper_action.hpp"
+#include <controller_interface/controller_interface.hpp>
 
 namespace hsrb_gripper_controller {
 
+class IHrhGripperAction;
+
 /// @class HrhGripperController
-/// @brief High-Ratio-Hypoidグリッパコントローラ
+/// @brief High-Ratio-Hypoid Grippa Controller
 class HrhGripperController : public controller_interface::ControllerInterface {
  public:
   using Ptr = std::shared_ptr<HrhGripperController>;
 
   HrhGripperController();
 
-  controller_interface::return_type init(const std::string& controller_name) override;
+  controller_interface::return_type init(const std::string& controller_name, const std::string& namespace_ = "",
+                                         const rclcpp::NodeOptions& node_options = rclcpp::NodeOptions()) override;
 
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
-  controller_interface::return_type update() override;
+  controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_configure(const rclcpp_lifecycle::State& previous_state) override;
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_init() override;
 
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_activate(const rclcpp_lifecycle::State& previous_state) override;
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
+      const rclcpp_lifecycle::State& previous_state) override;
 
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate(
+      const rclcpp_lifecycle::State& previous_state) override;
 
-  /// 指令を受付可能か返す
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
+      const rclcpp_lifecycle::State& previous_state) override;
+
+  /// Return if you can accept the command
   bool IsAcceptable();
 
-  /// アクティブなゴールを中断する
+  /// Insert an active goal
   void PreemptActiveGoal();
 
-  /// インターフェースへのアクセス
+  /// Access to the interface
   double GetCurrentPosition() const;
   double GetCurrentVelocity() const;
   double GetCurrentTorque() const;
@@ -87,27 +90,26 @@ class HrhGripperController : public controller_interface::ControllerInterface {
 
   std::string joint_name() const { return joint_name_; }
 
-  /// 制御モードを変える
-  /// @param[in] mode 制御モード
-  void ChangeControlMode(IHrhGripperAction::Ptr action);
+  /// Change control mode
+  /// @param[in] Mode control mode
+  void ChangeControlMode(std::shared_ptr<IHrhGripperAction> action);
 
  protected:
-  // ControllerInterface::init以外の部分の初期化，テストのための分割
+  // ControllerInterface :: Initialization and testing for parts other than INIT
   bool InitImpl();
 
  private:
-  /// 制御モード指令バッファ
+  /// Control mode command buffer
   realtime_tools::RealtimeBuffer<int32_t> command_control_mode_;
 
-  /// 制御対象関節名
+  /// Control target joint name
   std::string joint_name_;
 
-  /// 左右の指関節名
+  /// Left and right finger joint names
   std::string left_spring_joint_;
   std::string right_spring_joint_;
 
-  /// TODO(Takeshita) indexでなくポインタをもたせる？
-  /// インターフェースのインデックス
+  /// Interface index
   uint32_t current_position_index_;
   uint32_t current_velocity_index_;
   uint32_t current_effort_index_;
@@ -119,11 +121,11 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   uint32_t command_grasping_flag_index_;
   uint32_t command_drive_mode_index_;
 
-  /// 全アクション
-  std::vector<IHrhGripperAction::Ptr> actions_;
+  /// All actions
+  std::vector<std::shared_ptr<IHrhGripperAction> > actions_;
 
-  /// 実行中のアクション
-  IHrhGripperAction::Ptr active_action_;
+  /// Running action
+  std::shared_ptr<IHrhGripperAction> active_action_;
 };
 
 }  // namespace hsrb_gripper_controller

@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_state.cpp
+/// @brief Bogie state class of all -sided plants
 #include <hsrb_base_controllers/omni_base_state.hpp>
 
 #include <string>
@@ -40,7 +42,7 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// 台車状態パブリッシュ周波数[Hz]
+// Bogie state public frequency [Hz]
 const double kDefaultStatePublishRate = 50.0;
 
 void ConvertVector(const Eigen::VectorXd& input_vector,
@@ -89,8 +91,7 @@ ControllerBaseState::ControllerBaseState(const Eigen::Vector3d& actual_positions
                                          const std::vector<double>& desired_velocities,
                                          const std::vector<double>& desired_accelerations) {
   ConvertVector(actual_positions, actual.positions);
-  // TODO(Takeshita) ここで変換しているのが微妙だなぁ
-  // base_velocity_はbase_footprint基準なので,odom基準に変換
+  // Base_velocity_ is a base_footprint standard, so convert it to ODOM standard
   Eigen::Matrix3d rot_mat;
   rot_mat << cos(actual_positions[kIndexBaseTheta]), -sin(actual_positions[kIndexBaseTheta]), 0.0,
              sin(actual_positions[kIndexBaseTheta]), cos(actual_positions[kIndexBaseTheta]), 0.0,
@@ -106,7 +107,10 @@ ControllerBaseState::ControllerBaseState(const Eigen::Vector3d& actual_positions
 
 ControllerBaseState::ControllerBaseState(const Eigen::Vector3d& actual_positions,
                                          const Eigen::Vector3d& actual_velocities)
-    : ControllerBaseState(actual_positions, actual_velocities, {}, {}, {}) {}
+    : ControllerBaseState(actual_positions, actual_velocities, {}, {}, {}) {
+  desired = actual;
+  UpdateError();
+}
 
 void ControllerBaseState::UpdateError() {
   ControllerState::UpdateError();
@@ -153,10 +157,10 @@ void Convert(const State& in, trajectory_msgs::msg::JointTrajectoryPoint& out) {
 }
 
 
-StatePublisher::StatePublisher(const rclcpp::Node::SharedPtr& node,
+StatePublisher::StatePublisher(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                const std::string& topic_name,
                                const std::vector<std::string>& joint_names)
-    : node_(node), joint_names_(joint_names), last_state_published_time_(node->now()), state_publish_period_(0) {
+    : node_(node), joint_names_(joint_names), last_state_published_time_(node->now()), state_publish_period_(0, 0) {
   const double state_publish_rate = GetPositiveParameter(node, "state_publish_rate", kDefaultStatePublishRate);
   state_publish_period_ = rclcpp::Duration::from_seconds(1.0 / state_publish_rate);
 

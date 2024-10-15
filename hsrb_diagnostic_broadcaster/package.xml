@@ -1,32 +1,26 @@
 <package format="3">
-  <name>hsrb_gripper_controller</name>
+  <name>hsrb_diagnostic_broadcaster</name>
   <version>2.1.0</version>
-  <description>The gripper controller for HSR-hsrb</description>
+  <description>Ros controller plugins for HSR-B's diagnostics.</description>
 
   <maintainer email="xr-hsr-support@mail.toyota.co.jp">HSR Support</maintainer>
 
   <license>BSD 3-clause Clear License</license>
 
   <author>Hiroaki Yaguchi</author>
-  <author>Kazuto Murase</author>
   <author>Keisuke Takeshita</author>
-  <author>Koji Terada</author>
-  <author>Takuma Sugino</author>
-  <author>Yusuke Ota</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>lifecycle_msgs</depend>
   <depend>controller_interface</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>hardware_interface</depend>
   <depend>hsrb_servomotor_protocol</depend>
-  <depend>joint_trajectory_controller</depend>
   <depend>pluginlib</depend>
-  <depend>rclcpp</depend>
-  <depend>rclcpp_action</depend>
-  <depend>tmc_control_msgs</depend>
-  <depend>yaml-cpp</depend>
+  <depend>realtime_tools</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
-  <test_depend>ament_cmake_gmock</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -30,12 +30,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_controller.hpp
+/// @brief Omnidistant bogie controller class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROLLER_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROLLER_HPP_
 
 #include <string>
 
 #include <controller_interface/controller_interface.hpp>
+#include <lifecycle_msgs/msg/state.hpp>
 
 #include <hsrb_base_controllers/command_subscriber.hpp>
 #include <hsrb_base_controllers/controller_command_interface.hpp>
@@ -43,9 +46,11 @@ DAMAGE.
 #include <hsrb_base_controllers/omni_base_joint_controller.hpp>
 #include <hsrb_base_controllers/omni_base_odometry.hpp>
 
+#include "tolerances.hpp"
+
 namespace hsrb_base_controllers {
 
-/// 全方位台車速度コントローラクラス
+/// Omnidistant bogie speed controller class
 class OmniBaseController
     : public controller_interface::ControllerInterface,
       public IControllerCommandInterface {
@@ -53,74 +58,68 @@ class OmniBaseController
   OmniBaseController() = default;
   ~OmniBaseController() = default;
 
-  // コントローラ初期化
-  controller_interface::return_type init(const std::string& controller_name) override;
+  // Initialization of controller
+  controller_interface::CallbackReturn on_init() override;
 
-  // ros2_controlのインターフェース設定
+  // Ros2_control interface settings
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-  // 台車ジョイント角速度を計算し更新
-  controller_interface::return_type update() override;
+  // Calculate and update the bogie joint speed
+  controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-  // configure時に呼ばれる関数
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_configure(const rclcpp_lifecycle::State& previous_state) override;
-  // activate時に呼ばれる関数
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_activate(const rclcpp_lifecycle::State& previous_state) override;
-  // deactivate時に呼ばれる関数
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
+  // Functions called at configure
+  controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
+  // Functions called during Activate
+  controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
+  // Functions called during DEACTIVATE
+  controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
-  // 指令を受付可能か返す
+  // Return if you can accept the command
   bool IsAcceptable() override;
 
-  // 入力速度指令をセットする
+  // Set the input speed command
   void UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) override;
 
-  // 入力軌道指令を検証する
+  // Verify the input orbit command
   bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) override;
-  // 入力軌道指令をセットする
+  // Set the input orbit command
   void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) override;
-  // 入力軌道をリセットする
+  // Reset the input orbit
   void ResetTrajectory() override;
 
  protected:
-  // ControllerInterface::init以外の部分の初期化，テストのための分割
+  // ControllerInterface :: Initialization and testing for parts other than INIT
   bool InitImpl();
 
-  // 軌道追従の許容幅
-  joint_trajectory_controller::SegmentTolerances default_tolerances_;
-  joint_trajectory_controller::SegmentTolerances active_tolerances_;
-  // 軌道追従中のtolerancesのチェック
-  // 追従を続ける場合は正の数を，追従を止める場合はcontrol_msgs/action/FollowJointTrajectoryのエラーコード(0 ~ -5)を返す
+  // Available in track tracking
+  SegmentTolerances default_tolerances_;
+  SegmentTolerances active_tolerances_;
+  // Check for Tolerances while tracking
+  // If you continue to follow, return the positive number. If you stop following, return the constrol_msgs/action/FollowJointtrajectory error code (0 ~ -5).
   int32_t CheckTorelances(const ControllerBaseState& state, bool before_last_point, double time_from_trajectory_end);
 
-  // 入力速度指令サブスクライバ
+  // Input Speed ​​Directors Subscler
   CommandVelocitySubscriber::Ptr velocity_subscriber_;
-  // 入力軌道指令サブスクライバ
+  // Input orbital command subcliver
   CommandTrajectorySubscriber::Ptr trajectory_subscriber_;
-  // 入力軌道Action指令サーバ
+  // Input orbit Action command server
   TrajectoryActionServer::Ptr trajectory_action_;
 
-  // Jointコントローラ
+  // Joint controller
   OmniBaseJointController::Ptr joint_controller_;
 
-  // 台車のホイールオドメトリ計算クラス
+  // Bogie wheel and dometry calculation class
   BaseOdometry::Ptr base_odometry_;
   WheelOdometry::Ptr wheel_odometry_;
 
-  // 台車の指令速度を計算するクラス
+  // Class to calculate the command speed of the bogie
   OmniBaseVelocityControl::Ptr velocity_control_;
   OmniBaseTrajectoryControl::Ptr trajectory_control_;
 
-  // 台車の状態の発行
+  // Issuance of a bogie condition
   StatePublisher::Ptr joint_state_publisher_;
   StatePublisher::Ptr base_state_publisher_;
-
-  // 前回update関数が呼ばれた時刻
-  rclcpp::Time last_update_time_;
 };
 
 }  // namespace hsrb_base_controllers

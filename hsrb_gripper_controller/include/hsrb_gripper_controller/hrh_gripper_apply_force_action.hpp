@@ -36,7 +36,6 @@ DAMAGE.
 #include <memory>
 #include <string>
 #include <vector>
-
 #include <tmc_control_msgs/action/gripper_apply_effort.hpp>
 
 #include "hsrb_gripper_controller/hrh_gripper_action.hpp"
@@ -44,58 +43,55 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperApplyForceCalculator
-/// @brief Hrhグリッパ指先力計算クラス
+/// @brief HRH Grippers Finger Tip Power Calculation Class
 class HrhGripperApplyForceCalculator {
  public:
   using Ptr = std::shared_ptr<HrhGripperApplyForceCalculator>;
-  /// コンストラクタ
+  /// constructor
   HrhGripperApplyForceCalculator();
-  /// コンストラクタ
-  /// @param [in] path キャリブレーションファイルパス
+  /// constructor
+  /// @param [IN] Path calibration file path
   HrhGripperApplyForceCalculator(const std::string& calibration_file_path, const rclcpp::Logger& logger);
 
   virtual ~HrhGripperApplyForceCalculator() = default;
 
-  /// 左右の指先力を統合して算出
-  // @return 現在指先力[N]
-  double GetCurrentForce(double hand_motor_pos,
-                         double left_spring_proximal_joint_pos,
+  /// The left and right fingers are integrated and calculated
+  // @return Currently finger tip [n]
+  double GetCurrentForce(double hand_motor_pos, double left_spring_proximal_joint_pos,
                          double right_spring_proximal_joint_pos) const;
 
  private:
-  /// 力制御用キャリブレーションデータの読み込み
+  /// Read of calibration data for force control
   void LoadForceCalibrationData(const std::string& path, const rclcpp::Logger& logger);
 
-  /// 指先力の現在値を内力と照らしあわせて算出
-  /// @return 現在指先力[N]
-  double CalculateForce(double hand_motor_pos,
-                        double spring_proximal_joint_pos,
-                        const std::vector<std::vector<double>>& calib_data) const;
+  /// Calculate the current value of finger strength in light of internal force
+  /// @return Currently finger tip [n]
+  double CalculateForce(double hand_motor_pos, double spring_proximal_joint_pos,
+                        const std::vector<std::vector<double> >& calib_data) const;
 
-  /// グリッパの内力をキャリブデータから算出
-  /// @return 内力[N]
-  double CalculateInternalForce(double hand_motor_pos,
-                                const std::vector<double>& calib_p0,
+  /// Calculate the internal force of the grippers from the calibi data
+  /// @return Internal force [n]
+  double CalculateInternalForce(double hand_motor_pos, const std::vector<double>& calib_p0,
                                 const std::vector<double>& calib_p1) const;
 
-  /// 指先力のキャリブレーションデータ[N]
+  /// Fingering calibration data [N]
   std::vector<std::vector<double>> hand_left_force_calib_data_;
   std::vector<std::vector<double>> hand_right_force_calib_data_;
 
-  /// 指付け根関節のバネ定数[Nm/rad]
+  /// Spring constant of finger root joint [NM/RAD]
   double hand_spring_coeff_;
 
-  /// 指の長さ[m]
+  /// Finger length [M]
   double arm_length_;
 };
 
 
 /// @class HrhGripperApplyForceAction
-/// @brief Hrhグリッパ力制御アクションクラス
+/// @brief HRH Grippers Control Action Class
 class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::action::GripperApplyEffort> {
  public:
-  /// コンストラクタ
-  /// @param [in] controller 親コントローラ
+  /// constructor
+  /// @param [IN] Controller parent controller
   explicit HrhGripperApplyForceAction(HrhGripperController* controller);
   virtual ~HrhGripperApplyForceAction() = default;
 
@@ -104,51 +100,51 @@ class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::act
   void PreemptActiveGoal() override;
 
  private:
-  /// アクションの初期化の実装
-  bool InitImpl(const rclcpp::Node::SharedPtr& node) override;
-  /// アクションの目標を更新する
+  /// Implementation of initialization of action
+  bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
+  /// Update action goals
   void UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) override;
 
-  /// ゴール力の許容誤差[N]
+  /// Tolerance error of goal power [N]
   double goal_tolerance_;
-  /// stall判定する速度閾値[rad/s]
+  /// Speed ​​threshold to be determined [RAD/S]
   double stall_velocity_threshold_;
-  /// stall判定する時間[s]
+  /// Time to determine Stall [S]
   double stall_timeout_;
 
-  /// 力制御用PIDゲイン
+  /// PID gain for power control
   double force_control_pgain_;
   double force_control_igain_;
   double force_control_dgain_;
 
-  /// I制御の誤差積分蓄積制限値
+  /// I controlled incorrect integration restriction value
   double force_ierr_max_;
-  /// I制御の誤差積分蓄積値バッファ
+  /// I controlled incorrect integration value buffer
   double force_ierr_buff_;
 
-  /// 指先力のローパスフィルタ係数
+  /// Low -pass filter coefficient of finger tips
   double force_lpf_coeff_;
-  /// 指先力のローパスフィルタバッファ[N]
+  /// Low -pass filter buffer with fingertips [n]
   double force_lpf_buff_;
 
-  /// 指先力計算機
+  /// Refers
   HrhGripperApplyForceCalculator::Ptr force_calculator_;
 
-  /// 指令値バッファ
+  /// Directive value buffer
   realtime_tools::RealtimeBuffer<double> command_buffer_;
-  /// アクション継続フラグバッファ
+  /// Action continuation flag buffer
   realtime_tools::RealtimeBuffer<bool> stop_flag_buffer_;
 
-  /// 指先力の指令値と現在値との誤差から目標位置を算出
-  /// @return 目標位置
+  /// Calculate the target position from the error between the finger tissue and the present value
+  /// @return Target location
   double GetCommandPos();
-  /// ローパスフィルタを通した現在の指先力[N]
+  /// Current finger tip force through the low -pass filter [N]
   double current_force_lpf_;
 
-  /// アクション成否判定
-  /// @param [in] time 現在時刻
+  /// Action success or failure judgment
+  /// @param [in] time now
   void CheckForSuccess(const rclcpp::Time& time);
-  /// 最後に動作した時刻
+  /// The last time
   rclcpp::Time last_movement_time_;
 };
 

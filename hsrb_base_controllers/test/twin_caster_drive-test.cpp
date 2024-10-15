@@ -30,6 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief Exercise model class test of all -sided bogie
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -52,10 +53,10 @@ const double kOdomAngularErrorLimit = 0.01;
 namespace hsrb_base_controllers {
 const OmniBaseSize kOmniBaseCorrectSize = { 1.0, 1.0, 1.0 };
 
-// 初期設定パラメータのテスト
+// Initial setting parameter test
 TEST(TwinCasterDriveTest, InvalidParameter) {
-  // 無効なパラメータで初期化
-  // 正しく例外を出すことができるか
+  // Initialize with invalid parameters
+  // Can I make an exception correctly?
   OmniBaseSize minus_tread_size = { -1.0, 1.0, 1.0 };
   EXPECT_ANY_THROW(TwinCasterDrive minus_tread(minus_tread_size));
   OmniBaseSize zero_tread_size = { 0.0, 1.0, 1.0 };
@@ -70,11 +71,11 @@ TEST(TwinCasterDriveTest, InvalidParameter) {
 }
 
 
-// 運動学・逆運動学が正しく対応しているかのテスト
+// Testing whether athletic and reverse athleticiology correspond correctly
 TEST(TwinCasterDriveTest, CircularConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // 任意のステア軸角度の状態で順運動学・逆運動学変換をして元の値に戻るか
+  // Do you want to return to the original value by performing ordering and reverse athletic conversion at an arbitrary steer axis angle.
   for (int i = -360; i < 360; ++i) {
     const double angle = M_PI * static_cast<double>(i) / 180.0;
     drive.Update(angle);
@@ -95,11 +96,11 @@ TEST(TwinCasterDriveTest, CircularConversion) {
 }
 
 
-// 速度0の変換が正しく行われているかのテスト
+// Testing whether the conversion of speed 0 is performed correctly
 TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // 関節角速度->荷台速度
+  // Half-angle speed-> loading speed
   Eigen::Vector3d joint_velocities(0.0, 0.0, 0.0);
   Eigen::Vector3d base_velocity =
       drive.ConvertForward(joint_velocities);
@@ -107,7 +108,7 @@ TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
   EXPECT_NEAR(base_velocity(kIndexBaseY), 0.0, kLinearErrorLimit);
   EXPECT_NEAR(base_velocity(kIndexBaseTheta), 0.0, kLinearErrorLimit);
 
-  // 荷台速度->関節角速度
+  // Backdle speed-> joint angle speed
   base_velocity << 0.0, 0.0, 0.0;
   joint_velocities = drive.ConvertInverse(base_velocity);
   EXPECT_NEAR(joint_velocities(kJointIDRightWheel), 0.0, kLinearErrorLimit);
@@ -116,12 +117,12 @@ TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
 }
 
 
-// 関節角速度->荷台速度の変換が正しく行われているかのテスト
+// Half-angle speed-> Testing whether the loading speed is converted correctly
 TEST(TwinCasterDriveTest, ForwardConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // 車輪軸2軸を同速度に動かし直進させる
-  // 任意速度・ステア軸の任意角度で正しく台車速度を計算することができるか
+  // Move the two wheel shaft axis to the same speed and go straight
+  // Is it possible to calculate the bogie speed correctly at the arbitrary speed, arbitrary angle of the steer axis
   boost::mt19937 rng(static_cast<uint64_t>(time(0)));
   boost::uniform_real<> linear_dist(-100.0, 100.0);
   boost::variate_generator<
@@ -140,8 +141,8 @@ TEST(TwinCasterDriveTest, ForwardConversion) {
     EXPECT_NEAR(base_velocity(kIndexBaseTheta), 0.0, kAngularErrorLimit);
   }
 
-  // ステア軸のみを動かす速度を出す
-  // 台車が並進方向に動かず旋回方向の速度のみが出ているかかどうか
+  // Express the speed to move only the steer axis
+  // Whether the bogie does not move in parallel direction and only has the speed in the direction of turning
   boost::uniform_real<> angular_dist(-10.0, 10.0);
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > angular_rand(rng, angular_dist);
@@ -159,12 +160,12 @@ TEST(TwinCasterDriveTest, ForwardConversion) {
 }
 
 
-// 荷台速度->関節角速度の変換が正しく行われているかのテスト
+// Captable speed-> Testing whether the joint angle speed is converted correctly
 TEST(TwinCasterDriveTest, InverseConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // ステア軸は任意角度で台車を直進
-  // 車輪軸が正しい速度で同速度で動いているかどうか
+  // The steer axis goes straight through the bogie at an arbitrary angle
+  // Whether the wheel shaft is moving at the same speed at the correct speed
   boost::mt19937 rng(static_cast<uint64_t>(time(0)));
   boost::uniform_real<> linear_dist(-100.0, 100.0);
   boost::variate_generator<
@@ -184,8 +185,8 @@ TEST(TwinCasterDriveTest, InverseConversion) {
     EXPECT_NEAR(joint_velocities(kJointIDSteer), 0.0, kJointErrorLimit);
   }
 
-  // ステア軸は任意角度で台車を回転
-  // ステア軸が正しい速度で動いているか
+  // The steer axis rotates the bogie at an arbitrary angle
+  // Is the steer axis moving at the correct speed?
   boost::uniform_real<> angular_dist(-10.0, 10.0);
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > angular_rand(rng, angular_dist);
@@ -203,7 +204,7 @@ TEST(TwinCasterDriveTest, InverseConversion) {
 }
 
 
-// 関節角速度から台車のオドメトリを正しく計算できているかのテスト
+// Testing whether you can calculate the bogie odometry correctly from the joint angle speed
 TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
   boost::scoped_ptr<class TwinCasterDrive> drive(
       new TwinCasterDrive(kOmniBaseCorrectSize));
@@ -213,7 +214,7 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > rand_r(rng, joint_dist);
 
-  // 任意の関節角度からスタートしても正しくオドメトリが計算できるか
+  // Can I calculate the odmetry correctly even if I start from any joint angle?
   for (int i = 0; i < 10; ++i) {
     drive.reset(new TwinCasterDrive(kOmniBaseCorrectSize));
 
@@ -223,7 +224,7 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
     Eigen::Vector3d base_odometry =
         drive->UpdateOdometry(period, joint_positions, joint_velocities);
 
-    // 初回にはオドメトリがゼロになっているか
+    // Is the odometori zero in the first time?
     EXPECT_NEAR(base_odometry(kIndexBaseX), 0.0, kLinearErrorLimit);
     EXPECT_NEAR(base_odometry(kIndexBaseY), 0.0, kLinearErrorLimit);
     EXPECT_NEAR(base_odometry(kIndexBaseTheta), 0.0, kAngularErrorLimit);
@@ -233,8 +234,8 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
     double expected_distance =
         velocity * period * static_cast<double>(update_num);
 
-    // 並進移動->その場旋回を行うような関節角速度を指定し
-    // 正しい位置にオドメトリが計算されるか
+    // Concert movement-> Specify the joint speed speed that turns on the spot
+    // Is the odometori calculated in the correct position?
     Eigen::Vector3d base_velocity(velocity, 0.0 , 0.0);
     for (int j = 0; j < update_num; ++j) {
       drive->Update(joint_positions(kJointIDSteer));

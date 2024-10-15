@@ -31,24 +31,20 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 #include "hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp"
-
 #include <limits>
-
 #include <hsrb_servomotor_protocol/exxx_common.hpp>
-
 #include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 
 namespace {
 
-// デフォルトの位置ゴール許容誤差[rad]
+// Default position goal tolerance error [RAD]
 const double kDefaultPositionGoalTolerance = 0.05;
-// デフォルトのゴール到達許容時間[s]
+// Default goal reach accepted time [S]
 const double kDefaultPositionGoalTimeTolerance = 0.05;
 
-bool ValidateTrajectory(const rclcpp::Node::SharedPtr& node,
-                        const trajectory_msgs::msg::JointTrajectory& trajectory,
-                        const std::string& joint_name) {
-  // グリッパは1軸前提
+bool ValidateTrajectory(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
+                        const trajectory_msgs::msg::JointTrajectory& trajectory, const std::string& joint_name) {
+  // Grippers are assumed 1 -axis
   if (trajectory.joint_names.size() != 1) {
     RCLCPP_ERROR(node->get_logger(), "Can't accept new action goals. joint_names' size is invalid.");
     return false;
@@ -99,34 +95,46 @@ HrhGripperFollowTrajectoryAction::HrhGripperFollowTrajectoryAction(HrhGripperCon
       default_goal_tolerance_(kDefaultPositionGoalTolerance),
       default_goal_time_tolerance_(kDefaultPositionGoalTimeTolerance) {}
 
+bool HrhGripperFollowTrajectoryAction::Activate() {
+  last_command_state_.positions = { controller_->GetCurrentPosition() };
+  last_command_state_.velocities = { controller_->GetCurrentVelocity() };
+  return true;
+}
+
 void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
-  // 軌道があるかのチェック，軌道追従モードでしかUpdateは呼ばれないはずなので不要かも
+  // Check if there is orbit, update should only be called in orbit follow -up mode, so it may not be necessary.
   auto current_msg = trajectory_ptr_->get_trajectory_msg();
   auto new_msg = trajectory_msg_buffer_.readFromRT();
   if (current_msg != *new_msg) {
     trajectory_ptr_->update(*new_msg);
   }
-  if (!trajectory_active_ptr_ ||
-      !(*trajectory_active_ptr_)->has_trajectory_msg() ||
+  if (!trajectory_active_ptr_ || !(*trajectory_active_ptr_)->has_trajectory_msg() ||
       (*trajectory_active_ptr_)->get_trajectory_msg()->points.empty()) {
     return;
   }
 
-  // 目標位置のサンプル
+  // Target position sample
   if (!(*trajectory_active_ptr_)->is_sampled_already()) {
-    trajectory_msgs::msg::JointTrajectoryPoint current_state;
-    current_state.positions = {controller_->GetCurrentPosition()};
-    current_state.velocities = {controller_->GetCurrentVelocity()};
-    (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, current_state);
+    if (open_loop_control_) {
+      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, last_command_state_);
+    } else {
+      trajectory_msgs::msg::JointTrajectoryPoint current_state;
+      current_state.positions = { controller_->GetCurrentPosition() };
+      current_state.velocities = { controller_->GetCurrentVelocity() };
+      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, current_state);
+    }
   }
   trajectory_msgs::msg::JointTrajectoryPoint desired_state;
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator start_segment_it;
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator end_segment_it;
-  (*trajectory_active_ptr_)->sample(time, desired_state, start_segment_it, end_segment_it);
+  joint_trajectory_controller::interpolation_methods::InterpolationMethod interpolation_method =
+      joint_trajectory_controller::interpolation_methods::InterpolationMethod::NONE;
+  (*trajectory_active_ptr_)->sample(time, interpolation_method, desired_state, start_segment_it, end_segment_it);
+  last_command_state_ = desired_state;
 
   controller_->SetComandPosition(desired_state.positions[0]);
 
-  // 成否判定，グリッパではgoal toleranceのみをチェックする
+  // Judgment and failure, check only GOAL TOLERANCE in the gripper
   const auto active_goal = *goal_handle_buffer_.readFromNonRT();
   if (!active_goal) {
     return;
@@ -155,11 +163,12 @@ void HrhGripperFollowTrajectoryAction::PreemptActiveGoal() {
   trajectory_msg_buffer_.writeFromNonRT(std::make_shared<trajectory_msgs::msg::JointTrajectory>());
 }
 
-/// アクションの初期化の実装
-bool HrhGripperFollowTrajectoryAction::InitImpl(const rclcpp::Node::SharedPtr& node) {
+/// Implementation of initialization of action
+bool HrhGripperFollowTrajectoryAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   default_goal_tolerance_ = GetPositiveParameter(node, "position_goal_tolerance", kDefaultPositionGoalTolerance);
-  default_goal_time_tolerance_ = GetNonNegativeParameter(node, "position_goal_time_tolerance",
-                                                         kDefaultPositionGoalTimeTolerance);
+  default_goal_time_tolerance_ =
+      GetNonNegativeParameter(node, "position_goal_time_tolerance", kDefaultPositionGoalTimeTolerance);
+  open_loop_control_ = GetParameter(node, "open_loop_control", false);
 
   goal_condition_buffer_.initRT(GoalCondition());
 
@@ -173,16 +182,14 @@ bool HrhGripperFollowTrajectoryAction::InitImpl(const rclcpp::Node::SharedPtr& n
   return true;
 }
 
-/// ゴールが受け入れ可能かをチェックする
-bool HrhGripperFollowTrajectoryAction::ValidateGoal(
-    const control_msgs::action::FollowJointTrajectory::Goal& goal) {
+/// Check if the goal is acceptable
+bool HrhGripperFollowTrajectoryAction::ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) {
   return ValidateTrajectory(node_, goal.trajectory, controller_->joint_name());
 }
 
-/// アクションの目標を更新する
-void HrhGripperFollowTrajectoryAction::UpdateActionImpl(
-    const control_msgs::action::FollowJointTrajectory::Goal& goal) {
-  // path_toleranceはサポート外
+/// Update action goals
+void HrhGripperFollowTrajectoryAction::UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) {
+  // PATH_TOLERANCE is not supported
   if (!goal.path_tolerance.empty()) {
     RCLCPP_WARN(node_->get_logger(), "path_tolerance is not supported. Ignoring the parameter...");
   }
@@ -196,7 +203,7 @@ void HrhGripperFollowTrajectoryAction::UpdateActionImpl(
   }
   goal_condition.expected_arrival_time = start_time + rclcpp::Duration(goal.trajectory.points.back().time_from_start);
 
-  rclcpp::Duration goal_time_tolerance(0);
+  rclcpp::Duration goal_time_tolerance(0, 0);
   if (goal.goal_tolerance.size() == 1 && goal.goal_tolerance[0].name == controller_->joint_name()) {
     goal_condition.goal_tolerance = goal.goal_tolerance[0].position;
     goal_time_tolerance = goal.goal_time_tolerance;
@@ -204,7 +211,7 @@ void HrhGripperFollowTrajectoryAction::UpdateActionImpl(
     goal_condition.goal_tolerance = default_goal_tolerance_;
     goal_time_tolerance = rclcpp::Duration::from_seconds(default_goal_time_tolerance_);
   }
-  if (goal_time_tolerance == rclcpp::Duration(0)) {
+  if (goal_time_tolerance == rclcpp::Duration(0, 0)) {
     goal_condition.abort_time = rclcpp::Time(std::numeric_limits<int64_t>::max());
   } else {
     goal_condition.abort_time = goal_condition.expected_arrival_time + goal_time_tolerance;

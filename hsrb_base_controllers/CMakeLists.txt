@@ -8,12 +8,16 @@ find_package(control_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(joint_trajectory_controller REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(tmc_utils REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(urdf REQUIRED)
 
@@ -36,11 +40,15 @@ ament_target_dependencies(${PROJECT_NAME}_modules
   geometry_msgs
   hardware_interface
   joint_trajectory_controller
+  lifecycle_msgs
   nav_msgs
   rclcpp
   rclcpp_action
+  rclcpp_lifecycle
+  rcl_interfaces
   realtime_tools
   tf2_msgs
+  tmc_utils
   trajectory_msgs
   urdf
 )
@@ -58,6 +66,7 @@ install(
 install(
   TARGETS
   ${PROJECT_NAME}
+  ${PROJECT_NAME}_modules
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -83,7 +92,7 @@ if(BUILD_TESTING)
   ament_add_gtest(omni_base_input_odometry_test test/omni_base_input_odometry-test.cpp)
   target_link_libraries(omni_base_input_odometry_test ${PROJECT_NAME})
 
-  find_package(Boost COMPONENTS thread REQUIRED)
+  find_package(Boost REQUIRED COMPONENTS thread)
   ament_add_gtest(omni_base_joint_controller_test test/omni_base_joint_controller-test.cpp
                   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
   target_link_libraries(omni_base_joint_controller_test ${PROJECT_NAME} Boost::thread)
@@ -104,9 +113,12 @@ ament_export_dependencies(
   geometry_msgs
   hardware_interface
   joint_trajectory_controller
+  lifecycle_msgs
   nav_msgs
   rclcpp
   rclcpp_action
+  rclcpp_lifecycle
+  rcl_interfaces
   tf2_msgs
   trajectory_msgs
   urdf
@@ -114,6 +126,6 @@ ament_export_dependencies(
 ament_export_include_directories(
   include
 )
-ament_export_libraries(${PROJECT_NAME})
+ament_export_libraries(${PROJECT_NAME} ${PROJECT_NAME}_modules)
 ament_package()
 

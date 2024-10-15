@@ -30,12 +30,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_controller-test.cpp
+/// @brief Test of all -sided bogie speed controller
+
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include <controller_interface/controller_state_names.hpp>
+#include <lifecycle_msgs/msg/state.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include <hsrb_base_controllers/omni_base_controller.hpp>
@@ -54,7 +57,7 @@ constexpr double kVelocityErrorThreshold = 0.1;
 constexpr double kWheelVelocityLimitThreshold = 8.5;
 constexpr double kYawVelocityLimitThreshold = 1.8;
 
-// テスト用入力軌道の作成
+// Creating a test input orbit
 trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
   trajectory_msgs::msg::JointTrajectory trajectory;
   trajectory.joint_names = {"odom_x", "odom_y", "odom_t"};
@@ -76,39 +79,18 @@ trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
 
 namespace hsrb_base_controllers {
 
-class TestableOmniBaseController : public OmniBaseController {
- public:
-  using Ptr = std::shared_ptr<TestableOmniBaseController>;
-
-  TestableOmniBaseController();
-  ~TestableOmniBaseController() = default;
-
-  controller_interface::return_type init(const std::string& controller_name) override;
-};
-
-TestableOmniBaseController::TestableOmniBaseController() {
-  EXPECT_EQ(ControllerInterface::init(kControllerNodeName), controller_interface::return_type::OK);
-}
-
-controller_interface::return_type TestableOmniBaseController::init(const std::string& controller_name) {
-  if (InitImpl()) {
-    return controller_interface::return_type::OK;
-  } else {
-    return controller_interface::return_type::ERROR;
-  }
-}
-
 class OmniBaseControllerTest : public ::testing::Test {
  public:
-  void SetUp() override;
+  void SetupController();
 
  protected:
-  TestableOmniBaseController::Ptr controller_;
-  rclcpp::Node::SharedPtr controller_node_;
+  std::shared_ptr<OmniBaseController> controller_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr controller_node_;
   rclcpp::Node::SharedPtr client_node_;
   HardwareStub::Ptr hardware_;
   TopicRelay<nav_msgs::msg::Odometry>::Ptr odom_relay_;
   SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>::Ptr state_counter_;
+  rclcpp::Time last_update_time_;
 
   void SpinOnce(rclcpp::WallRate& rate, bool do_update = true);
 
@@ -120,45 +102,50 @@ class OmniBaseControllerTest : public ::testing::Test {
   void WaitForReady(typename std::shared_future<Handle>& future, rclcpp::WallRate& rate);
 };
 
-void OmniBaseControllerTest::SetUp() {
-  controller_ = std::make_shared<TestableOmniBaseController>();
-  controller_node_ = controller_->get_node();
+void OmniBaseControllerTest::SetupController() {
+  controller_ = std::make_shared<OmniBaseController>();
 
-  controller_node_->declare_parameter<std::vector<std::string>>("base_coordinates", {"odom_x", "odom_y", "odom_t"});
-  DeclareRobotDescription(controller_node_);
-  controller_node_->declare_parameter("odometry_publish_rate", 200.0);
-  controller_node_->declare_parameter("joints.steer", "base_roll_joint");
-  controller_node_->declare_parameter("joints.r_wheel", "base_r_drive_wheel_joint");
-  controller_node_->declare_parameter("joints.l_wheel", "base_l_drive_wheel_joint");
-  controller_node_->declare_parameter("odom_x.p_gain", 0.01);
-  controller_node_->declare_parameter("odom_y.p_gain", 0.01);
-  controller_node_->declare_parameter("odom_t.p_gain", 0.01);
-  controller_node_->declare_parameter("constraints.odom_x.trajectory", 0.5);
-  controller_node_->declare_parameter("constraints.goal_time", 0.5);
+  rclcpp::NodeOptions options = rclcpp::NodeOptions()
+      .allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true);
+  options.append_parameter_override<std::vector<std::string>>("base_coordinates", {"odom_x", "odom_y", "odom_t"});
+  options.append_parameter_override<std::string>("robot_description", GetRobotDescription());
+  options.append_parameter_override<float>("odometry_publish_rate", 200.0);
+  options.append_parameter_override<std::string>("joints.steer", "base_roll_joint");
+  options.append_parameter_override<std::string>("joints.r_wheel", "base_r_drive_wheel_joint");
+  options.append_parameter_override<std::string>("joints.l_wheel", "base_l_drive_wheel_joint");
+  options.append_parameter_override<float>("odom_x.p_gain", 0.01);
+  options.append_parameter_override<float>("odom_y.p_gain", 0.01);
+  options.append_parameter_override<float>("odom_t.p_gain", 0.01);
+  options.append_parameter_override<float>("constraints.odom_x.trajectory", 0.5);
+  options.append_parameter_override<float>("constraints.goal_time", 0.5);
 
+  EXPECT_EQ(controller_->init(kControllerNodeName, "", options), controller_interface::return_type::OK);
+  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
   hardware_ = std::make_shared<HardwareStub>(kUpdateFrequency);
-
-  // TestableOmniBaseController::initではノード名使っていないけれど，本来の使い方に合わせて入れておく
-  EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
   controller_->assign_interfaces(std::move(hardware_->command_interfaces), std::move(hardware_->state_interfaces));
-  EXPECT_EQ(controller_->configure().label(), controller_interface::state_names::INACTIVE);
-  EXPECT_EQ(controller_->activate().label(), controller_interface::state_names::ACTIVE);
+  EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
   client_node_ = rclcpp::Node::make_shared(kClientNodeName);
   odom_relay_ = std::make_shared<TopicRelay<nav_msgs::msg::Odometry>>(
       client_node_, std::string(kControllerNodeName) + "/wheel_odom", "odom");
   state_counter_ = std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
       client_node_, std::string(kControllerNodeName) + "/state");
+
+  controller_node_ = controller_->get_node();
+  last_update_time_ = controller_node_->get_clock()->now();
 }
 
 void OmniBaseControllerTest::SpinOnce(rclcpp::WallRate& rate, bool do_update) {
   rate.sleep();
   rclcpp::spin_some(client_node_);
-  rclcpp::spin_some(controller_node_);
-  EXPECT_EQ(controller_->update(), controller_interface::return_type::OK);
+  rclcpp::spin_some(controller_node_->get_node_base_interface());
+  const auto current_time = controller_node_->get_clock()->now();
+  EXPECT_EQ(controller_->update(current_time, current_time - last_update_time_),
+      controller_interface::return_type::OK);
   rclcpp::spin_some(client_node_);
-  rclcpp::spin_some(controller_node_);
+  rclcpp::spin_some(controller_node_->get_node_base_interface());
   if (do_update) hardware_->Update();
+  last_update_time_ = current_time;
 }
 
 template <typename Action>
@@ -192,10 +179,11 @@ void OmniBaseControllerTest::WaitForReady(typename std::shared_future<Handle>& f
   }
 }
 
-/// x,yに等速度指令を与え台車を動かす
+/// Give X and Y a equivalent speed command and move the bogie
 TEST_F(OmniBaseControllerTest, CommandVelocity) {
+  SetupController();
   auto publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/command_velocity", rclcpp::SystemDefaultsQoS());
+      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
   auto wheel_odom_counter = std::make_shared<SubscriptionCounter<nav_msgs::msg::Odometry>>(
       client_node_, std::string(kControllerNodeName) + "/wheel_odom");
 
@@ -204,12 +192,12 @@ TEST_F(OmniBaseControllerTest, CommandVelocity) {
   command_velocity.linear.y = -0.05;
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
-  for (int i = 0; i < 200; ++i) {
+  for (int i = 0; i < 199; ++i) {
     publisher->publish(command_velocity);
     SpinOnce(loop_rate);
   }
 
-  // デフォルトは50Hz
+  // The default is 50Hz
   EXPECT_EQ(state_counter_->count(), 99);
   auto base_state = state_counter_->last_msg();
 
@@ -240,8 +228,9 @@ TEST_F(OmniBaseControllerTest, CommandVelocity) {
   EXPECT_NEAR(wheel_odom.twist.twist.angular.z, 0.0, kEpsilon);
 }
 
-/// トピックで入力したテスト軌道に正しく追従できているかどうか
+/// Whether you can correctly follow the test track entered in the topic
 TEST_F(OmniBaseControllerTest, SendTrajectoryTopic) {
+  SetupController();
   auto publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
   publisher->publish(GetTestTrajectory());
@@ -259,7 +248,7 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryTopic) {
   for (int i = 0; i < 100; ++i) {
     SpinOnce(loop_rate);
 
-    // もともとのテストで存在したので，一応チェックしておく
+    // It existed in the original test, so check it out.
     auto state = state_counter_->last_msg();
     for (int i = 0; i < 3; ++i) {
       ASSERT_LT(fabs(state.error.positions[i]),  kPositionErrorThreshold);
@@ -278,8 +267,9 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kVelocityErrorThreshold);
 }
 
-/// アクション経由で入力したテスト軌道に正しく追従できているかどうか
+/// Whether you can correctly follow the test track entered via the action
 TEST_F(OmniBaseControllerTest, SendTrajectoryAction) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -359,8 +349,9 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryAction) {
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 }
 
-/// 回転方向にPI以上を越えた指令値が入っても適切に軌道生成・追従できるか
+/// Is it possible to properly generate or follow the order even if the command value exceeds the PI or higher in the rotation direction
 TEST_F(OmniBaseControllerTest, OverPISteerTrajectory) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -411,8 +402,9 @@ TEST_F(OmniBaseControllerTest, OverPISteerTrajectory) {
   EXPECT_NEAR(base_state.actual.positions[2], -2.5, kEpsilon);
 }
 
-/// トピック経由で入力したテスト軌道に追従できないときに正しく停止できるか
+/// Can you stop properly when you can't follow the test track entered via a topic?
 TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
+  SetupController();
   auto publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
@@ -432,7 +424,7 @@ TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
   }
   EXPECT_GT(max_error, 0.5);
 
-  // たいして進まずに止められたというのをチェックするための適当な閾値
+  // Appropriate threshold to check that it was stopped without much progress
   auto base_state = state_counter_->last_msg();
   EXPECT_LT(base_state.actual.positions[0], 0.2);
 
@@ -442,8 +434,9 @@ TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
 }
 
-/// アクション経由で入力したテスト軌道に追従できないときに正しく停止できるか
+/// Can you stop properly when you can't follow the test trajectory entered via an action
 TEST_F(OmniBaseControllerTest, StopFollowingInAction) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -474,8 +467,9 @@ TEST_F(OmniBaseControllerTest, StopFollowingInAction) {
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED);
 }
 
-/// アクション経由で入力したテスト軌道のゴールに対して精度が足らない時に正しく失敗のresultを返すことができるか
+/// Can I correctly return the failure when the accuracy is not enough for the goal of the test orbit entered via the action
 TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -486,7 +480,7 @@ TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
 
   ActionType::Result result;
   auto result_callback = [&result](const rclcpp_action::ClientGoalHandle<ActionType>::WrappedResult& _result) {
-    result = *_result.result;
+  result = *_result.result;
   };
   auto send_goal_options = rclcpp_action::Client<ActionType>::SendGoalOptions();
   send_goal_options.result_callback = result_callback;
@@ -495,7 +489,7 @@ TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 200; ++i) {
-    SpinOnce(loop_rate);
+  SpinOnce(loop_rate);
   }
 
   auto goal_handle = future_goal_handle.get();
@@ -505,8 +499,9 @@ TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED);
 }
 
-/// アクションキャンセルのテスト
+/// Action cancellation test
 TEST_F(OmniBaseControllerTest, ActionCancel) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -530,8 +525,9 @@ TEST_F(OmniBaseControllerTest, ActionCancel) {
   EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-/// Goalを続けて2回送る(先のはキャンセルされるClearActiveGoal)
+/// Continue Goal and send it for 2 times (the first is ClearactiveGoal)
 TEST_F(OmniBaseControllerTest, SendGoalTwice) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -555,14 +551,30 @@ TEST_F(OmniBaseControllerTest, SendGoalTwice) {
   EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-/// 台車の座標軸パラメータが無いときに初期化が失敗するか
+/// Will Configure fail when there is no bogie coordinate axis parameter?
 TEST_F(OmniBaseControllerTest, NoOdomCoordParameter) {
-  controller_node_->undeclare_parameter("base_coordinates");
-  EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::ERROR);
+  controller_ = std::make_shared<OmniBaseController>();
+
+  rclcpp::NodeOptions options = rclcpp::NodeOptions()
+      .allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true);
+  options.append_parameter_override<std::string>("robot_description", GetRobotDescription());
+  options.append_parameter_override<float>("odometry_publish_rate", 200.0);
+  options.append_parameter_override<std::string>("joints.steer", "base_roll_joint");
+  options.append_parameter_override<std::string>("joints.r_wheel", "base_r_drive_wheel_joint");
+  options.append_parameter_override<std::string>("joints.l_wheel", "base_l_drive_wheel_joint");
+  options.append_parameter_override<float>("odom_x.p_gain", 0.01);
+  options.append_parameter_override<float>("odom_y.p_gain", 0.01);
+  options.append_parameter_override<float>("odom_t.p_gain", 0.01);
+  options.append_parameter_override<float>("constraints.odom_x.trajectory", 0.5);
+  options.append_parameter_override<float>("constraints.goal_time", 0.5);
+
+  EXPECT_EQ(controller_->init(kControllerNodeName, "", options), controller_interface::return_type::OK);
+  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
 }
 
-/// 軌道を設定しないGoalを送る
+/// Send a GOAL that does not set orbit
 TEST_F(OmniBaseControllerTest, EmptyTrajectoryGoal) {
+  SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
       client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
@@ -579,10 +591,11 @@ TEST_F(OmniBaseControllerTest, EmptyTrajectoryGoal) {
   EXPECT_EQ(goal_handle, nullptr);
 }
 
-/// 速度指令が閾値を超えた時に速度リミットが掛かるかどうか
+/// Whether the speed limit will be applied when the speed command exceeds the threshold
 TEST_F(OmniBaseControllerTest, VelocityLimit) {
+  SetupController();
   auto publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/command_velocity", rclcpp::SystemDefaultsQoS());
+      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
   auto internal_state_counter =
       std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
           client_node_, std::string(kControllerNodeName) + "/internal_state");
@@ -591,25 +604,25 @@ TEST_F(OmniBaseControllerTest, VelocityLimit) {
     geometry_msgs::msg::Twist command_velocity;
     switch (i) {
       case 0:
-        // x方向に限界を超えた正の速度
+        // Positive speed beyond the limit in the x direction
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 0.0;
         break;
       case 1:
-        // y方向に限界を超えた負の速度
+        // Negative speed exceeding the limit in the Y direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = -10.0;
         command_velocity.angular.z = 0.0;
         break;
       case 2:
-        // yaw方向に限界を超えた速度
+        // Speed ​​exceeding the limit in the YAW direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
         break;
       case 3:
-        // x,yaw方向に限界を超えた速度(2回リミットが掛かるかどうか)
+        // Speed ​​exceeding the limit in the x, yaw direction (whether the limit is applied twice)
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
@@ -625,7 +638,7 @@ TEST_F(OmniBaseControllerTest, VelocityLimit) {
 
       auto state = internal_state_counter->last_msg();
       if (state.desired.velocities.size() == 3) {
-        // 小数点誤差を考慮して1万分の1のバッファを持たせて比較する
+        // Compare with a buffer of 1 / 10,000 in consideration of the decimal error.
         ASSERT_LE(std::abs(state.desired.velocities[0]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[1]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[2]), kYawVelocityLimitThreshold * 1.0001);
@@ -634,11 +647,12 @@ TEST_F(OmniBaseControllerTest, VelocityLimit) {
   }
 }
 
-/// 台車の制御手段切り替えのテスト
+/// Testing of bogie control means
 TEST_F(OmniBaseControllerTest, ChangeControlMethod) {
-  // まずは速度
+  SetupController();
+  // First, speed
   auto vel_publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/command_velocity", rclcpp::SystemDefaultsQoS());
+      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
 
   geometry_msgs::msg::Twist command_velocity;
   command_velocity.linear.x = 0.1;
@@ -656,7 +670,7 @@ TEST_F(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // ここから軌道
+  // Track from here
   auto trj_publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
   trj_publisher->publish(GetTestTrajectory());
@@ -681,7 +695,7 @@ TEST_F(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // また速度
+  // Also speed
   for (int i = 0; i < 200; ++i) {
     vel_publisher->publish(command_velocity);
     SpinOnce(loop_rate);

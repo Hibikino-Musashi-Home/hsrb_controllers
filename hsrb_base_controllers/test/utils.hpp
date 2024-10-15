@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief Convenient function for testing
+
 #include <fstream>
 #include <memory>
 #include <string>
@@ -83,8 +85,8 @@ class TopicRelay {
 
 class TimeoutDetection {
  public:
-  explicit TimeoutDetection(const rclcpp::Node::SharedPtr& node, double timeout_sec = 1.0) {
-    clock_ = node->get_clock();
+  explicit TimeoutDetection(const rclcpp::Clock::SharedPtr& clock, double timeout_sec = 1.0) {
+    clock_ = clock;
     timeout_stamp_ = clock_->now() + rclcpp::Duration::from_seconds(timeout_sec);
   }
 
@@ -99,7 +101,7 @@ class TimeoutDetection {
   rclcpp::Time timeout_stamp_;
 };
 
-void DeclareRobotDescription(const rclcpp::Node::SharedPtr& node) {
+std::string GetRobotDescription() {
   std::fstream xml_file("robot.xml", std::fstream::in);
   std::string robot_description;
   while (xml_file.good()) {
@@ -108,7 +110,7 @@ void DeclareRobotDescription(const rclcpp::Node::SharedPtr& node) {
     robot_description += (line + "\n");
   }
   xml_file.close();
-  node->declare_parameter("robot_description", robot_description);
+  return robot_description;
 }
 
 }  // namespace hsrb_base_controllers

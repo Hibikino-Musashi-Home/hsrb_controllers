@@ -37,39 +37,35 @@ DAMAGE.
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
-
 #include <hsrb_servomotor_protocol/exxx_common.hpp>
-
 #include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 
 
 namespace {
 
-// デフォルト力誤差閾値[N]
+// Default force error threshold [n]
 const double kDefaultForceGoalTolerance = 0.1;
-// デフォルトstall判定とする速度閾値[rad/s]
+// Speed ​​threshold to determine the default Stall [RAD/S]
 const double kDefaultStallVelocityThreshold = 0.05;
-// デフォルトstall判定とする時間[s]
+// Time to determine the default Stall [S]
 const double kDefaultStallTimeout = 2.0;
-// デフォルトローパスフィルタゲイン
+// Default draw pass filter gain
 const double kDefaultForceLPFCoeff = 0.8;
-// デフォルト制御ゲイン
+// Default control gain
 const double kDefaultForceControlPgain = 0.1;
 const double kDefaultForceControlIgain = 0.15;
 const double kDefaultForceControlDgain = 0.4;
-// デフォルト誤差積分蓄積最大値
+// Maximum value of default error in accumulation
 const double kDefaultForceIerrMax = 0.15;
 
 }  // unnamed namespace
 
 namespace hsrb_gripper_controller {
 
-HrhGripperApplyForceCalculator::HrhGripperApplyForceCalculator()
-    : hand_spring_coeff_(1.0),
-      arm_length_(1.0) {}
+HrhGripperApplyForceCalculator::HrhGripperApplyForceCalculator() : hand_spring_coeff_(1.0), arm_length_(1.0) {}
 
-HrhGripperApplyForceCalculator::HrhGripperApplyForceCalculator(
-    const std::string& calibration_file_path, const rclcpp::Logger& logger)
+HrhGripperApplyForceCalculator::HrhGripperApplyForceCalculator(const std::string& calibration_file_path,
+                                                               const rclcpp::Logger& logger)
     : HrhGripperApplyForceCalculator() {
   LoadForceCalibrationData(calibration_file_path, logger);
 }
@@ -80,14 +76,14 @@ void HrhGripperApplyForceCalculator::LoadForceCalibrationData(const std::string&
     node = YAML::LoadFile(path);
 
     hand_left_force_calib_data_ = node["hand_left_force"].as<std::vector<std::vector<double> > >();
-    for (size_t i = 0; i < hand_left_force_calib_data_.size(); i ++) {
+    for (size_t i = 0; i < hand_left_force_calib_data_.size(); i++) {
       if (hand_left_force_calib_data_[i].size() != 2) {
         RCLCPP_WARN(logger, "Lack of calibration data hand_left_force.");
         hand_left_force_calib_data_.clear();
       }
     }
     hand_right_force_calib_data_ = node["hand_right_force"].as<std::vector<std::vector<double> > >();
-    for (size_t i = 0; i < hand_right_force_calib_data_.size(); i ++) {
+    for (size_t i = 0; i < hand_right_force_calib_data_.size(); i++) {
       if (hand_right_force_calib_data_[i].size() != 2) {
         RCLCPP_WARN(logger, "Lack of calibration data hand_right_force.");
         hand_right_force_calib_data_.clear();
@@ -100,52 +96,41 @@ void HrhGripperApplyForceCalculator::LoadForceCalibrationData(const std::string&
   }
 }
 
-double HrhGripperApplyForceCalculator::GetCurrentForce(double hand_motor_pos,
-                                                       double left_spring_proximal_joint_pos,
+double HrhGripperApplyForceCalculator::GetCurrentForce(double hand_motor_pos, double left_spring_proximal_joint_pos,
                                                        double right_spring_proximal_joint_pos) const {
-  double hand_left_force = CalculateForce(hand_motor_pos,
-                                          left_spring_proximal_joint_pos,
-                                          hand_left_force_calib_data_);
-  double hand_right_force = CalculateForce(hand_motor_pos,
-                                           right_spring_proximal_joint_pos,
-                                           hand_right_force_calib_data_);
+  double hand_left_force = CalculateForce(hand_motor_pos, left_spring_proximal_joint_pos, hand_left_force_calib_data_);
+  double hand_right_force =
+      CalculateForce(hand_motor_pos, right_spring_proximal_joint_pos, hand_right_force_calib_data_);
   return (hand_left_force + hand_right_force) / 2;
 }
 
-double HrhGripperApplyForceCalculator::CalculateForce(
-    double hand_motor_pos,
-    double spring_proximal_joint_pos,
-    const std::vector<std::vector<double> >& calib_points) const {
+double HrhGripperApplyForceCalculator::CalculateForce(double hand_motor_pos, double spring_proximal_joint_pos,
+                                                      const std::vector<std::vector<double> >& calib_points) const {
   const double spring_proximal_joint_force = spring_proximal_joint_pos * hand_spring_coeff_ / arm_length_;
 
   if (!calib_points.size()) {
     return spring_proximal_joint_force;
   }
   if (hand_motor_pos < calib_points[0][0]) {
-    return std::max(0.0,
-                    spring_proximal_joint_force - calib_points[0][1]);
+    return std::max(0.0, spring_proximal_joint_force - calib_points[0][1]);
   }
   for (std::size_t i = 0; i < calib_points.size() - 1; i++) {
-    if (hand_motor_pos >= calib_points[i][0] &&
-        hand_motor_pos < calib_points[i + 1][0]) {
-      return std::max(0.0,
-                      spring_proximal_joint_force
-                      - CalculateInternalForce(hand_motor_pos,
-                                               calib_points[i],
-                                               calib_points[i + 1]));
+    if (hand_motor_pos >= calib_points[i][0] && hand_motor_pos < calib_points[i + 1][0]) {
+      return std::max(0.0, spring_proximal_joint_force -
+                               CalculateInternalForce(hand_motor_pos, calib_points[i], calib_points[i + 1]));
     }
   }
   return 0.0;
 }
 
-double HrhGripperApplyForceCalculator::CalculateInternalForce(
-    double hand_motor_pos,
-    const std::vector<double>& calib_p0,
-    const std::vector<double>& calib_p1) const {
-  // サイズチェックは読み込み時に行う
-  return fabs(calib_p1[0] - calib_p0[0]) > std::numeric_limits<double>::epsilon() * fmax(1, fmax(calib_p1[0], calib_p0[0]))  // NOLINT
-      ? (calib_p1[1] - calib_p0[1]) / (calib_p1[0] - calib_p0[0]) * (hand_motor_pos - calib_p0[0]) + calib_p0[1]
-      : (calib_p1[1] + calib_p0[1]) / 2;
+double HrhGripperApplyForceCalculator::CalculateInternalForce(double hand_motor_pos,
+                                                              const std::vector<double>& calib_p0,
+                                                              const std::vector<double>& calib_p1) const {
+  // Size check is performed when reading
+  return fabs(calib_p1[0] - calib_p0[0]) >
+                 std::numeric_limits<double>::epsilon() * fmax(1, fmax(calib_p1[0], calib_p0[0]))  // NOLINT
+             ? (calib_p1[1] - calib_p0[1]) / (calib_p1[0] - calib_p0[0]) * (hand_motor_pos - calib_p0[0]) + calib_p0[1]
+             : (calib_p1[1] + calib_p0[1]) / 2;
 }
 
 
@@ -162,7 +147,7 @@ HrhGripperApplyForceAction::HrhGripperApplyForceAction(HrhGripperController* con
       force_lpf_coeff_(kDefaultForceLPFCoeff),
       force_lpf_buff_(0.0) {}
 
-/// 周期更新処理
+/// Circular renewal processing
 void HrhGripperApplyForceAction::Update(const rclcpp::Time& time) {
   if (!IsActive() && *(stop_flag_buffer_.readFromRT())) {
     return;
@@ -176,8 +161,8 @@ void HrhGripperApplyForceAction::PreemptActiveGoal() {
   stop_flag_buffer_.writeFromNonRT(true);
 }
 
-/// アクションの初期化の実装
-bool HrhGripperApplyForceAction::InitImpl(const rclcpp::Node::SharedPtr& node) {
+/// Implementation of initialization of action
+bool HrhGripperApplyForceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   command_buffer_.initRT(0.0);
 
   goal_tolerance_ = GetPositiveParameter(node, "force_goal_tolerance", kDefaultForceGoalTolerance);
@@ -207,7 +192,7 @@ bool HrhGripperApplyForceAction::InitImpl(const rclcpp::Node::SharedPtr& node) {
   return true;
 }
 
-/// アクションの目標を更新する
+/// Update action goals
 void HrhGripperApplyForceAction::UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) {
   command_buffer_.writeFromNonRT(goal.effort);
   stop_flag_buffer_.writeFromNonRT(goal.do_control_stop);
@@ -216,12 +201,11 @@ void HrhGripperApplyForceAction::UpdateActionImpl(const tmc_control_msgs::action
 
 double HrhGripperApplyForceAction::GetCommandPos() {
   const double ref_force = *(command_buffer_.readFromRT());
-  const double current_force = force_calculator_->GetCurrentForce(controller_->GetCurrentPosition(),
-                                                                  controller_->GetLeftSpringPosition(),
-                                                                  controller_->GetRightSpringPosition());
+  const double current_force = force_calculator_->GetCurrentForce(
+      controller_->GetCurrentPosition(), controller_->GetLeftSpringPosition(), controller_->GetRightSpringPosition());
   current_force_lpf_ = (1 - force_lpf_coeff_) * current_force + force_lpf_coeff_ * force_lpf_buff_;
 
-  // フィードバックの送信
+  // Sending feedback
   const auto active_goal = *goal_handle_buffer_.readFromNonRT();
   if (active_goal) {
     const auto feedback = std::make_shared<tmc_control_msgs::action::GripperApplyEffort::Feedback>();
@@ -229,14 +213,14 @@ double HrhGripperApplyForceAction::GetCommandPos() {
     active_goal->setFeedback(feedback);
   }
 
-  // バッファの更新
+  // Buffa update
   force_ierr_buff_ += current_force_lpf_ - ref_force;
   force_ierr_buff_ = std::max(std::min(force_ierr_buff_, force_ierr_max_), -force_ierr_max_);
   double current_position = controller_->GetCurrentPosition();
   current_position += force_control_pgain_ * (current_force_lpf_ - ref_force) +
                       force_control_igain_ * force_ierr_buff_ +
                       force_control_dgain_ * (current_force_lpf_ - force_lpf_buff_);
-  // バッファの更新
+  // Buffa update
   force_lpf_buff_ = current_force_lpf_;
 
   return current_position;
@@ -245,15 +229,15 @@ double HrhGripperApplyForceAction::GetCommandPos() {
 void HrhGripperApplyForceAction::CheckForSuccess(const rclcpp::Time& time) {
   double current_velocity = controller_->GetCurrentVelocity();
   if (fabs(current_velocity) > stall_velocity_threshold_) {
-    // 動いていると判定して、最後に動いた時刻を更新
+    // Judging that it is moving and updated the last time
     last_movement_time_ = time;
   } else if ((time - last_movement_time_).seconds() > stall_timeout_) {
-    // stall状態と判定
+    // Stall status and judgment
     auto result = std::make_shared<tmc_control_msgs::action::GripperApplyEffort::Result>();
     result->stalled = true;
     result->effort = current_force_lpf_;
 
-    // stallして平衡状態になった時に指令値と現在値を比較
+    // Compare the command value and the present value when the balance is in the equilibrium
     double command = *(command_buffer_.readFromRT());
     const auto active_goal = *goal_handle_buffer_.readFromNonRT();
     if (!active_goal) {

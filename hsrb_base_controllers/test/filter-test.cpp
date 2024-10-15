@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file filter-test.cpp
+/// @brief Filter class test
+
 #include <vector>
 #include <gtest/gtest.h>
 #include <hsrb_base_controllers/filter.hpp>
@@ -41,22 +44,22 @@ const double kEpsilon = 1.0e-5;
 namespace hsrb_base_controllers {
 
 TEST(FilterTest, Default) {
-  // デフォルトは、a=[1.0], b=[1.0]で初期化される
+  // The default is initialized in a = [1.0], b = [1.0]
   Filter<> filter;
-  // 何もフィルタされない
+  // Nothing is filtered
   EXPECT_EQ(1.0, filter.update(1.0));
   EXPECT_EQ(2.0, filter.update(2.0));
   EXPECT_EQ(3.0, filter.update(3.0));
 }
 
 TEST(FilterTest, Normal) {
-  // デフォルトは、{1.0, 0.1, 0.9}, b={0.2, 0.8}で初期化
+  // The default is initialized with {1.0, 0.1, 0.9}, b = {0.2, 0.8}.
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // 内部状態は0で初期化される
+  // The internal state is initialized at 0
   // y = 1.0*0.2 + 0.0*0.8 - 0.0*0.1 - 0.0*0.9
   EXPECT_NEAR(0.2, filter.update(1.0), kEpsilon);
   // y = 2.0*0.2 + 1.0*0.8 - 0.2*0.1 - 0.0*0.9
@@ -68,13 +71,13 @@ TEST(FilterTest, Normal) {
 }
 
 TEST(FilterTest, Reset) {
-  // デフォルトは、{1.0, 0.1, 0.9}, b={0.2, 0.8}で初期化
+  // The default is initialized with {1.0, 0.1, 0.9}, b = {0.2, 0.8}.
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // 内部状態を1.0で初期化(入力と出力が1.0で平衡になった状態)
+  // Initialization of the internal state with 1.0 (the input and output are equilibrium with 1.0)
   filter.reset(1.0);
   // y = 1.0*0.2 + 1.0*0.8 - 1.0*0.1 - 1.0*0.9
   EXPECT_NEAR(0.0, filter.update(1.0), kEpsilon);

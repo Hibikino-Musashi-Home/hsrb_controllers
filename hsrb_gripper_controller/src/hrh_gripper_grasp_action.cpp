@@ -37,7 +37,7 @@ DAMAGE.
 #include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 
 namespace {
-// デフォルトトルク誤差閾値[Nm]
+// Default Torque error threshold [NM]
 const double kDefaultTorqueGoalTolerance = 1.0;
 
 }  // unnamed namespace
@@ -49,7 +49,7 @@ HrhGripperGraspAction::HrhGripperGraspAction(HrhGripperController* controller)
       goal_tolerance_(kDefaultTorqueGoalTolerance),
       is_sent_start_grasping_(false) {}
 
-/// 周期更新処理
+/// Circular renewal processing
 void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
   if (!IsActive()) {
     return;
@@ -59,15 +59,15 @@ void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
     std::lock_guard<std::mutex> guard(mutex_);
     bool start_grasping_flag;
     if (grasping_flag) {
-      // 握り込み開始フラグON済み
+      // Grip -in start flag on
       start_grasping_flag = false;
       is_sent_start_grasping_ = true;
     } else {
       if (is_sent_start_grasping_) {
-        // 握り込み開始フラグ送信済みで握り込み完了
+        // Grip -in start flag transmitted and completed grip
         start_grasping_flag = false;
       } else {
-        // 握り込み開始フラグをまだ送っていない
+        // I haven't sent a grip -in start flag yet
         start_grasping_flag = true;
       }
     }
@@ -76,13 +76,13 @@ void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
   CheckForSuccess();
 }
 
-/// アクションの初期化の実装
-bool HrhGripperGraspAction::InitImpl(const rclcpp::Node::SharedPtr& node) {
+/// Implementation of initialization of action
+bool HrhGripperGraspAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   goal_tolerance_ = GetPositiveParameter(node, "torque_goal_tolerance", kDefaultTorqueGoalTolerance);
   return true;
 }
 
-/// アクションの目標を更新する
+/// Update action goals
 void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) {
   std::lock_guard<std::mutex> guard(mutex_);
   command_torque_ = goal.effort;
@@ -91,9 +91,9 @@ void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::Gri
 
 void HrhGripperGraspAction::CheckForSuccess() {
   bool grasping_flag = controller_->GetCurrentGraspingFlag();
-  // コントロールテーブル上に握り込み開始フラグをセットすると握り込み開始、
-  // Stallするとフラグがリセットされる仕様(指令と状態確認のフィールドが同一)
-  // 握り込み開始フラグを送信済みで、かつ現在の握り込みフラグがリセットされているなら握り込み完了である。
+  // Start the grip and set the flag on the control table and start gripping, start
+  // Specifications are reset to the flag when stall (the same field for the status confirmation)
+  // If the grip -in start flag has been transmitted and the current grip flag is reset, the grip is completed.
   bool has_completed;
   {
     std::lock_guard<std::mutex> guard(mutex_);
@@ -102,9 +102,9 @@ void HrhGripperGraspAction::CheckForSuccess() {
   if (has_completed) {
     auto result = std::make_shared<tmc_control_msgs::action::GripperApplyEffort::Result>();
     result->stalled = true;
-    result->effort = controller_->GetCurrentTorque();;
+    result->effort = controller_->GetCurrentTorque();
 
-    // stallして平衡状態になった時に指令値と現在値を比較
+    // Compare the command value and the present value when the balance is in the equilibrium
     bool is_succeeded;
     {
       std::lock_guard<std::mutex> guard(mutex_);
@@ -122,4 +122,3 @@ void HrhGripperGraspAction::CheckForSuccess() {
 }
 
 }  // namespace hsrb_gripper_controller
-

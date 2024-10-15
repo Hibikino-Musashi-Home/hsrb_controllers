@@ -30,12 +30,15 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_input_odometry.cpp
+/// @brief Odometri class of all -sided bogies
+
 #include <hsrb_base_controllers/omni_base_input_odometry.hpp>
 
 namespace hsrb_base_controllers {
 
-/// 外部から入力されるオドメトリ
-InputOdometry::InputOdometry(const rclcpp::Node::SharedPtr& node) {
+/// Odometry entered from the outside
+InputOdometry::InputOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   odometry_subscriber_ = node->create_subscription<nav_msgs::msg::Odometry>(
       "odom", 1, std::bind(&InputOdometry::OdometryCallback, this, std::placeholders::_1));
   InitOdometry();
@@ -48,7 +51,7 @@ void InputOdometry::InitOdometry() {
   odometry_buffer_.initRT(initial_odom);
 }
 
-/// オドメトリコールバック
+/// Odometry callback
 void InputOdometry::OdometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
   odometry_buffer_.writeFromNonRT(*msg);
 }

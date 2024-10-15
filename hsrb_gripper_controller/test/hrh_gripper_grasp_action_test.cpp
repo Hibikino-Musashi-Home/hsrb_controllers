@@ -30,11 +30,12 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief HRH grip -in control action test
+
 #include <gtest/gtest.h>
 
-#include <hsrb_servomotor_protocol/exxx_common.hpp>
-
 #include <hsrb_gripper_controller/hrh_gripper_grasp_action.hpp>
+#include <hsrb_servomotor_protocol/exxx_common.hpp>
 
 #include "utils.hpp"
 
@@ -54,7 +55,7 @@ TEST_F(GraspActionTest, ActionSucceeded) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 握り込み開始
+  // Start gripping
   hardware_->effort->set_current(0.0);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
@@ -62,14 +63,14 @@ TEST_F(GraspActionTest, ActionSucceeded) {
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // 握り込み中
+  // While holding in
   hardware_->grasping_flag->set_current(true);
   action_server_->Update(node_->now());
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // 握り込み完了
+  // Completed in grip
   hardware_->effort->set_current(2.1);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
@@ -79,7 +80,8 @@ TEST_F(GraspActionTest, ActionSucceeded) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 }
 
 TEST_F(GraspActionTest, ActionAborted) {
@@ -89,22 +91,23 @@ TEST_F(GraspActionTest, ActionAborted) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 握り込み開始
+  // Start gripping
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
 
-  // 握り込み中
+  // While holding in
   hardware_->grasping_flag->set_current(true);
   action_server_->Update(node_->now());
 
-  // 握り込み完了
+  // Completed in grip
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(GraspActionTest, PreemptFromOutside) {
@@ -114,7 +117,7 @@ TEST_F(GraspActionTest, PreemptFromOutside) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 握り込み開始
+  // Start gripping
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
@@ -122,14 +125,15 @@ TEST_F(GraspActionTest, PreemptFromOutside) {
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // 外部からの割り込み
+  // External interrupt
   action_server_->PreemptActiveGoal();
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // 割り込みがあったので状態が変化しない
+  // The condition does not change because there was an interrupt
   hardware_->grasping_flag->set_current(true);
   action_server_->Update(node_->now());
 
@@ -144,12 +148,12 @@ TEST_F(GraspActionTest, CancelGoal) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 握り込み開始
+  // Start gripping
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
 
-  // キャンセルを投げる
+  // Cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -157,12 +161,13 @@ TEST_F(GraspActionTest, CancelGoal) {
   rclcpp::spin_until_future_complete(node_, future_cancel);
 
   auto cancel_response = future_cancel.get();
-  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED);
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GraspActionTest, GoalTorelance) {
-  node_->set_parameter({rclcpp::Parameter("torque_goal_tolerance", 1.2)});
+  node_->set_parameter({ rclcpp::Parameter("torque_goal_tolerance", 1.2) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -171,22 +176,23 @@ TEST_F(GraspActionTest, GoalTorelance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // 握り込み開始
+  // Start gripping
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
 
-  // 握り込み中
+  // While holding in
   hardware_->grasping_flag->set_current(true);
   action_server_->Update(node_->now());
 
-  // 握り込み完了
+  // Completed in grip
   hardware_->grasping_flag->set_current(false);
   action_server_->Update(node_->now());
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 }
 
 TEST_F(GraspActionTest, TargetMode) {

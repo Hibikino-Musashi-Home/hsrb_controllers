@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file controller_command_interface.hpp
+/// @brief Interface class that connects the controller and the command value from the ROS
 #ifndef HSRB_BASE_CONTROLLERS_CONTROLLER_COMMAND_INTERFACE_HPP_
 #define HSRB_BASE_CONTROLLERS_CONTROLLER_COMMAND_INTERFACE_HPP_
 
@@ -47,21 +49,17 @@ class IControllerCommandInterface {
 
   virtual ~IControllerCommandInterface() = default;
 
-  // 指令を受付可能か返す
+  // Return if you can accept the command
   virtual bool IsAcceptable() = 0;
 
-  // 入力速度指令をセットする
+  // Set the input speed command
   virtual void UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) = 0;
 
-  // 入力軌道指令を検証する
+  // Verify the input orbit command
   virtual bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) = 0;
-  // 入力軌道指令をセットする
+  // Set the input orbit command
   virtual void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) = 0;
-  // // TODO(Takeshita) アクションのgoalに含まれるtolerancesを扱うための関数を追加する
-  // // 入力軌道指令とtolerancesをセットする
-  // virtual void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
-  //                               const joint_trajectory_controller::SegmentTolerances& tolerances) = 0;
-  // 入力軌道をリセットする
+  // Reset the input orbit
   virtual void ResetTrajectory() = 0;
 };
 

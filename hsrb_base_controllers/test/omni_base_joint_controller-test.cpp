@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_joint_controller-test.cpp
+/// @brief Test of all -sided bogies joint controller class
+
 #include <fstream>
 #include <string>
 #include <vector>
@@ -39,6 +42,7 @@ DAMAGE.
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 
 #include <hsrb_base_controllers/omni_base_joint_controller.hpp>
+#include <rcl_interfaces/msg/parameter_descriptor.hpp>
 
 #include "hardware_stub.hpp"
 #include "utils.hpp"
@@ -47,7 +51,7 @@ namespace {
 constexpr double kEpsilon = 1.0e-5;
 
 void spin_some(const rclcpp::Node::SharedPtr& node) {
-  while (true) {
+  while (node) {
     rclcpp::spin_some(node);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
@@ -62,98 +66,104 @@ class OmniBaseJointControllerTest : public ::testing::Test {
   void SetUp() override;
 
  protected:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   rclcpp::Node::SharedPtr urdf_node_;
   OmniBaseJointController::Ptr controller_;
   HardwareStub hardware_;
 };
 
 void OmniBaseJointControllerTest::SetUp() {
-  node_ = rclcpp::Node::make_shared("test_node");
+  node_ = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node_->configure();
   controller_ = std::make_shared<OmniBaseJointController>(node_);
 
-  node_->declare_parameter("joints.steer", "base_roll_joint");
-  node_->declare_parameter("joints.r_wheel", "base_r_drive_wheel_joint");
-  node_->declare_parameter("joints.l_wheel", "base_l_drive_wheel_joint");
+  auto parameter_descriptor = rcl_interfaces::msg::ParameterDescriptor();
+  parameter_descriptor.dynamic_typing = true;
+  node_->declare_parameter("joints.steer", "base_roll_joint", parameter_descriptor);
+  node_->declare_parameter("joints.r_wheel", "base_r_drive_wheel_joint", parameter_descriptor);
+  node_->declare_parameter("joints.l_wheel", "base_l_drive_wheel_joint", parameter_descriptor);
 
-  DeclareRobotDescription(node_);
+  node_->declare_parameter("robot_description", GetRobotDescription(), parameter_descriptor);
   node_->declare_parameter("parameter_connection_timeout", 0);
 
+  node_->activate();
+
   urdf_node_ = rclcpp::Node::make_shared("urdf_node");
-  DeclareRobotDescription(urdf_node_);
+  urdf_node_->declare_parameter("robot_description", GetRobotDescription());
 }
 
-/// ステア軸名が用意されたインターフェースのリスト内に無いときに初期化が失敗するか
+/// Will the initialization fail when the steer axis name is not in a list of the prepared interface?
 TEST_F(OmniBaseJointControllerTest, BadSteerJointName) {
   node_->set_parameter({rclcpp::Parameter("joints.steer", "bad_joint_name")});
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 左車輪軸名が用意されたインターフェースのリストと違うときに初期化が失敗するか
+/// Will initialization fail when the left wheel axis is different from the list of interfaces with the left wheel axis name?
 TEST_F(OmniBaseJointControllerTest, BadLeftWheelJointName) {
   node_->set_parameter({rclcpp::Parameter("joints.l_wheel", "bad_joint_name")});
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 右車輪軸名が用意されたインターフェースのリストと違うときに初期化が失敗するか
+/// Does the initialization fail when the right wheel axis is different from the interface list with the right wheel axis name?
 TEST_F(OmniBaseJointControllerTest, BadRightWheelJointName) {
   node_->set_parameter({rclcpp::Parameter("joints.r_wheel", "bad_joint_name")});
   EXPECT_FALSE(controller_->Init());
 }
 
-/// ステア軸名の指定が無いときに初期化が失敗するか
+/// Does the initialization fail when there is no steer axis name?
 TEST_F(OmniBaseJointControllerTest, NoSteerJointName) {
   node_->undeclare_parameter("joints.steer");
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 左車輪軸名の指定が無いときに初期化が失敗するか
+/// Will the initialization fail when there is no specification of the left wheel axis name?
 TEST_F(OmniBaseJointControllerTest, NoLeftWheelJointName) {
   node_->undeclare_parameter("joints.l_wheel");
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 右車輪軸名の指定が無いときに初期化が失敗するか
+/// Will the initialization fail when there is no specification of the right wheel axis name?
 TEST_F(OmniBaseJointControllerTest, NoRightWheelJointName) {
   node_->undeclare_parameter("joints.r_wheel");
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 不正なrobot_descriptionで初期化が失敗するか
+/// Will the initialization fail with fraudulent Robot_description?
 TEST_F(OmniBaseJointControllerTest, InvalidRobotDescription) {
   node_->set_parameter({rclcpp::Parameter("robot_description", "invalid")});
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 別のノードのロボットモデルを取得して初期化
+/// Obtain a robot model of another node and initialize
 TEST_F(OmniBaseJointControllerTest, RobotDescriptionFromAnotherNode) {
   node_->undeclare_parameter("robot_description");
   node_->declare_parameter("model_node_name", "urdf_node");
 
-  // std::threadだとinterruptが存在しない
-  auto spin_thread = boost::thread(std::bind(spin_some, urdf_node_));
+  auto spin_thread = std::thread(std::bind(spin_some, std::ref(urdf_node_)));
   EXPECT_TRUE(controller_->Init());
-  spin_thread.interrupt();
+  urdf_node_.reset();
+  spin_thread.join();
 }
 
-/// 指定されたノードにロボットモデルが存在しない
+/// There is no robot model in the specified node
 TEST_F(OmniBaseJointControllerTest, NoRobotDescriptionOnAnotherNode) {
   node_->undeclare_parameter("robot_description");
   node_->declare_parameter("model_node_name", "no_description_node");
   auto node = rclcpp::Node::make_shared("no_description_node");
 
-  auto spin_thread = boost::thread(std::bind(spin_some, node));
+  auto spin_thread = std::thread(std::bind(spin_some, std::ref(node)));
   EXPECT_FALSE(controller_->Init());
-  spin_thread.interrupt();
+  node.reset();
+  spin_thread.join();
 }
 
-/// 別のノードを参照しようとするが，存在しないノードが指定されている
+/// A node that does not exist but does not exist, is specified
 TEST_F(OmniBaseJointControllerTest, NoRobotDescriptionNode) {
   node_->undeclare_parameter("robot_description");
   EXPECT_FALSE(controller_->Init());
 }
 
-/// 台車サイズが取得できること
+/// Being able to get the bogie size
 TEST_F(OmniBaseJointControllerTest, GetOmniBaseSize) {
   EXPECT_TRUE(controller_->Init());
 
@@ -163,25 +173,25 @@ TEST_F(OmniBaseJointControllerTest, GetOmniBaseSize) {
   EXPECT_EQ(0.04, omnibase_size.wheel_radius);
 }
 
-/// l_wheel_joint_nameが取得できること
+/// You can get l_wheel_joint_name
 TEST_F(OmniBaseJointControllerTest, GetLeftWhellJointName) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_EQ(controller_->l_wheel_joint_name(), "base_l_drive_wheel_joint");
 }
 
-/// r_wheel_joint_nameが取得できること
+/// R_Wheel_joint_name can be obtained
 TEST_F(OmniBaseJointControllerTest, GetRightWhellJointName) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_EQ(controller_->r_wheel_joint_name(), "base_r_drive_wheel_joint");
 }
 
-/// steer_joint_nameが取得できること
+/// You can get Steer_Joint_name
 TEST_F(OmniBaseJointControllerTest, GetSteerJointName) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_EQ(controller_->steer_joint_name(), "base_roll_joint");
 }
 
-/// 関節へ指令を投げるインターフェースの名前が取得できる
+/// You can get the name of the interface that throws command to the joint
 TEST_F(OmniBaseJointControllerTest, GetCommandInterfaceNames) {
   EXPECT_TRUE(controller_->Init());
 
@@ -192,7 +202,7 @@ TEST_F(OmniBaseJointControllerTest, GetCommandInterfaceNames) {
   EXPECT_NE(std::find(names.begin(), names.end(), "base_r_drive_wheel_joint/velocity"), names.end());
 }
 
-/// 関節の状態を入力するインターフェースの名前が取得できる
+/// You can get the name of the interface that inputs the state of the joint
 TEST_F(OmniBaseJointControllerTest, GetStateInterfaceNames) {
   EXPECT_TRUE(controller_->Init());
 
@@ -206,7 +216,7 @@ TEST_F(OmniBaseJointControllerTest, GetStateInterfaceNames) {
   EXPECT_NE(std::find(names.begin(), names.end(), "base_r_drive_wheel_joint/velocity"), names.end());
 }
 
-/// command_interfaceが不足してActivateに失敗する
+/// Command_interface is insufficient and Activate fails
 TEST_F(OmniBaseJointControllerTest, CommandInterfaceShortage) {
   EXPECT_TRUE(controller_->Init());
 
@@ -214,7 +224,7 @@ TEST_F(OmniBaseJointControllerTest, CommandInterfaceShortage) {
   EXPECT_FALSE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
 }
 
-/// state_interfaceが不足してActivateに失敗する
+/// State_interface is insufficient and Activate fails
 TEST_F(OmniBaseJointControllerTest, StateInterfaceShortage) {
   EXPECT_TRUE(controller_->Init());
 
@@ -222,7 +232,7 @@ TEST_F(OmniBaseJointControllerTest, StateInterfaceShortage) {
   EXPECT_FALSE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
 }
 
-/// 指令値が取得できること
+/// Being able to get the command value
 TEST_F(OmniBaseJointControllerTest, GetJointCommand) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -239,7 +249,14 @@ TEST_F(OmniBaseJointControllerTest, GetJointCommand) {
   EXPECT_NEAR(0.0262727, hardware_.steer_handle->command(), kEpsilon);
 }
 
-/// 指令値設定で旋回軸速度リミットがかかること
+/// What you can activate as many times as you want
+TEST_F(OmniBaseJointControllerTest, ReActivate) {
+  EXPECT_TRUE(controller_->Init());
+  EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
+  EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
+}
+
+/// The turning axial speed limit is applied in the command value setting
 TEST_F(OmniBaseJointControllerTest, SetJointCommandWithYawLimit) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -252,7 +269,7 @@ TEST_F(OmniBaseJointControllerTest, SetJointCommandWithYawLimit) {
   EXPECT_NEAR(-1.8, joint_command(kJointIDSteer), kEpsilon);
 }
 
-/// 指令値設定で車輪速度リミットがかかること
+/// The wheel speed limit is applied in the command value setting
 TEST_F(OmniBaseJointControllerTest, SetJointCommandWidhWheelLimit) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -265,7 +282,7 @@ TEST_F(OmniBaseJointControllerTest, SetJointCommandWidhWheelLimit) {
   EXPECT_NEAR(0.0862005, joint_command(kJointIDSteer), kEpsilon);
 }
 
-/// 旋回軸速度リミットのパラメータが反映されること
+/// The parameter of the turning axis speed limit is reflected
 TEST_F(OmniBaseJointControllerTest, SetYawVelocityLimit) {
   node_->declare_parameter("yaw_velocity_limit", 0.18);
 
@@ -292,7 +309,7 @@ TEST_F(OmniBaseJointControllerTest, SetYawVelocityLimit) {
   EXPECT_NEAR(-1.8, joint_command(kJointIDSteer), kEpsilon);
 }
 
-/// 車輪軸速度リミットのパラメータが反映されること
+/// The parameters of the wheel axis speed limit must be reflected
 TEST_F(OmniBaseJointControllerTest, SetWheelVelocityLimit) {
   node_->declare_parameter("wheel_velocity_limit", 0.85);
 
@@ -319,7 +336,7 @@ TEST_F(OmniBaseJointControllerTest, SetWheelVelocityLimit) {
   EXPECT_NEAR(0.0862005, joint_command(kJointIDSteer), kEpsilon);
 }
 
-/// 軸位置を取得できること
+/// Being able to get the axis position
 TEST_F(OmniBaseJointControllerTest, GetJointPositions) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -335,7 +352,7 @@ TEST_F(OmniBaseJointControllerTest, GetJointPositions) {
   EXPECT_EQ(joint_positions(kJointIDSteer), 0.3);
 }
 
-/// 軸速度を取得できること
+/// Being able to get axial speed
 TEST_F(OmniBaseJointControllerTest, GetJointVelocities) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -351,7 +368,7 @@ TEST_F(OmniBaseJointControllerTest, GetJointVelocities) {
   EXPECT_EQ(joint_velocities(kJointIDSteer), 0.3);
 }
 
-/// 大きすぎる車輪軸速度はエラーになる
+/// Too large wheel shaft speed becomes an error
 TEST_F(OmniBaseJointControllerTest, TooBigWheelVelocities) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -382,7 +399,7 @@ TEST_F(OmniBaseJointControllerTest, TooBigWheelVelocities) {
   EXPECT_TRUE(controller_->GetJointVelocities(joint_velocities));
 }
 
-/// 大きすぎる旋回軸速度はエラーになる
+/// Too large turning axial speed becomes an error
 TEST_F(OmniBaseJointControllerTest, TooBigSteerVelocities) {
   EXPECT_TRUE(controller_->Init());
   EXPECT_TRUE(controller_->Activate(hardware_.command_interfaces, hardware_.state_interfaces));
@@ -413,7 +430,7 @@ TEST_F(OmniBaseJointControllerTest, TooBigSteerVelocities) {
   EXPECT_TRUE(controller_->GetJointVelocities(joint_velocities));
 }
 
-/// 旋回軸の目標位置をリセットできること
+/// Being able to reset the target position of the turning axis
 TEST_F(OmniBaseJointControllerTest, ResetDesiredSteerPosition) {
   hardware_.steer_handle->set_current_pos(1.0);
   EXPECT_TRUE(controller_->Init());

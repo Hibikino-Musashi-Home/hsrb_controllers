@@ -1,0 +1,9 @@
+<library path="hsrb_diagnostic_broadcaster">
+  <class name="hsrb_diagnostic_broadcaster/ServoDiagnosticBroadcaster"
+         type="hsrb_diagnostic_broadcaster::ServoDiagnosticBroadcaster"
+         base_class_type="controller_interface::ControllerInterface">
+     <description>
+       Ros controller plugin for servo control diagnostics.
+     </description>
+  </class>
+</library>

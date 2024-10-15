@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief HRH grip -in control action test
+
 #include <gtest/gtest.h>
 
 #include <hsrb_servomotor_protocol/exxx_common.hpp>
@@ -63,15 +65,16 @@ TEST_F(ApplyForceActionTest, ActionSucceeded) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // デフォルトのゲインと差分から導出
+  // Derivation from the default gain and the difference
   const auto last_command = hardware_->position->command();
   EXPECT_NEAR(last_command, 0.1 * -0.05 + 0.15 * -0.05 + 0.4 * 1.0, kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // do_control_stopがfalseなので，アクション完了後も位置を更新し続ける
+  // Since Do_control_stop is False, keep updating the position even after the action is completed.
   action_server_->Update(node_->now());
   EXPECT_GT(std::abs(hardware_->position->command() - last_command), kEpsilon);
 }
@@ -91,15 +94,16 @@ TEST_F(ApplyForceActionTest, ControlStopAfterCompletion) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // デフォルトのゲインと差分から導出
+  // Derivation from the default gain and the difference
   const auto last_command = hardware_->position->command();
   EXPECT_NEAR(last_command, 0.1 * -0.05 + 0.15 * -0.05 + 0.4 * 1.0, kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // do_control_stopがtrueなので，アクション完了後は位置を更新しない
+  // Do_control_stop is true, so do not update the position after the action is completed.
   action_server_->Update(node_->now());
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
@@ -121,7 +125,8 @@ TEST_F(ApplyForceActionTest, ActionAborted) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(ApplyForceActionTest, PreemptFromOutside) {
@@ -139,14 +144,15 @@ TEST_F(ApplyForceActionTest, PreemptFromOutside) {
 
   const auto last_command = hardware_->position->command();
 
-  // 外部からの割り込み
+  // External interrupt
   action_server_->PreemptActiveGoal();
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // 割り込みがあったので,do_control_stopがfalseでも更新を止める
+  // DO_CONTROL_STOP stops updating with False because there was an interrupt.
   action_server_->Update(node_->now());
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
@@ -166,7 +172,7 @@ TEST_F(ApplyForceActionTest, CancelGoal) {
 
   const auto last_command = hardware_->position->command();
 
-  // キャンセルを投げる
+  // Cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -174,16 +180,18 @@ TEST_F(ApplyForceActionTest, CancelGoal) {
   rclcpp::spin_until_future_complete(node_, future_cancel);
 
   auto cancel_response = future_cancel.get();
-  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED);
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // 割り込みがあったので,do_control_stopがfalseでも更新を止める
+
+  // DO_CONTROL_STOP stops updating with False because there was an interrupt.
   action_server_->Update(node_->now());
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
 
 TEST_F(ApplyForceActionTest, ForceGoalTolerance) {
-  node_->set_parameter({rclcpp::Parameter("force_goal_tolerance", 0.2)});
+  node_->set_parameter({ rclcpp::Parameter("force_goal_tolerance", 0.2) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -202,11 +210,12 @@ TEST_F(ApplyForceActionTest, ForceGoalTolerance) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 }
 
 TEST_F(ApplyForceActionTest, StallVelocityThreshold) {
-  node_->set_parameter({rclcpp::Parameter("stall_velocity_threshold", 0.03)});
+  node_->set_parameter({ rclcpp::Parameter("stall_velocity_threshold", 0.03) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -216,7 +225,7 @@ TEST_F(ApplyForceActionTest, StallVelocityThreshold) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(2050));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1050));
 
   hardware_->velocity->set_current(0.04);
   hardware_->spring_l_position->set_current(500.0);
@@ -225,18 +234,20 @@ TEST_F(ApplyForceActionTest, StallVelocityThreshold) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_FALSE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_FALSE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 
   std::this_thread::sleep_for(std::chrono::milliseconds(2050));
 
   hardware_->velocity->set_current(0.03);
   action_server_->Update(node_->now());
 
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(ApplyForceActionTest, StallTimeout) {
-  node_->set_parameter({rclcpp::Parameter("stall_timeout", 2.2)});
+  node_->set_parameter({ rclcpp::Parameter("stall_timeout", 2.2) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -246,7 +257,7 @@ TEST_F(ApplyForceActionTest, StallTimeout) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(2050));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1050));
 
   hardware_->velocity->set_current(0.04);
   hardware_->spring_l_position->set_current(500.0);
@@ -255,17 +266,19 @@ TEST_F(ApplyForceActionTest, StallTimeout) {
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
-  EXPECT_FALSE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_FALSE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 
-  // 上のWaitForStatusで1秒待つので，残りを待てばいい
+  // Wait for 1 second with the Waitforstatus above, so wait for the rest
   std::this_thread::sleep_for(std::chrono::milliseconds(1250));
   action_server_->Update(node_->now());
 
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 }
 
 TEST_F(ApplyForceActionTest, ForceControlPgain) {
-  node_->set_parameter({rclcpp::Parameter("force_control_pgain", 1.0)});
+  node_->set_parameter({ rclcpp::Parameter("force_control_pgain", 1.0) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -280,12 +293,12 @@ TEST_F(ApplyForceActionTest, ForceControlPgain) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // ゲインと差分から導出
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(), 1.0 * -0.05 + 0.15 * -0.05 + 0.4 * 1.0, kEpsilon);
 }
 
 TEST_F(ApplyForceActionTest, ForceControlIgain) {
-  node_->set_parameter({rclcpp::Parameter("force_control_igain", 1.0)});
+  node_->set_parameter({ rclcpp::Parameter("force_control_igain", 1.0) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -300,12 +313,12 @@ TEST_F(ApplyForceActionTest, ForceControlIgain) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // ゲインと差分から導出
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(), 0.1 * -0.05 + 1.0 * -0.05 + 0.4 * 1.0, kEpsilon);
 }
 
 TEST_F(ApplyForceActionTest, ForceControlDgain) {
-  node_->set_parameter({rclcpp::Parameter("force_control_dgain", 1.0)});
+  node_->set_parameter({ rclcpp::Parameter("force_control_dgain", 1.0) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -320,14 +333,14 @@ TEST_F(ApplyForceActionTest, ForceControlDgain) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // ゲインと差分から導出
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(), 0.1 * -0.05 + 0.15 * -0.05 + 1.0 * 1.0, kEpsilon);
 }
 
 TEST_F(ApplyForceActionTest, ForceIerrMax) {
-  node_->set_parameter({rclcpp::Parameter("force_control_pgain", 0.0)});
-  node_->set_parameter({rclcpp::Parameter("force_control_igain", 0.2)});
-  node_->set_parameter({rclcpp::Parameter("force_control_dgain", 0.0)});
+  node_->set_parameter({ rclcpp::Parameter("force_control_pgain", 0.0) });
+  node_->set_parameter({ rclcpp::Parameter("force_control_igain", 0.2) });
+  node_->set_parameter({ rclcpp::Parameter("force_control_dgain", 0.0) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -344,7 +357,7 @@ TEST_F(ApplyForceActionTest, ForceIerrMax) {
 
   EXPECT_NEAR(hardware_->position->command(), 0.2 * -0.15, kEpsilon);
 
-  // キャンセルで終わらせておく
+  // Leave it with cancellation
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -352,11 +365,12 @@ TEST_F(ApplyForceActionTest, ForceIerrMax) {
   rclcpp::spin_until_future_complete(node_, future_cancel);
 
   auto cancel_response = future_cancel.get();
-  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
-  EXPECT_TRUE(WaitForStatus<ActionType>({node_}, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED);
+  EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
+    controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // force_ierr_maxを調整して，反映されることを確認
-  node_->set_parameter({rclcpp::Parameter("force_ierr_max", 0.05)});
+  // Adjust FORCE_IERR_MAX to confirm that it will be reflected
+  node_->set_parameter({ rclcpp::Parameter("force_ierr_max", 0.05) });
   EXPECT_TRUE(action_server_->Init(node_));
 
   future_goal_handle = action_client_->async_send_goal(goal);
@@ -368,7 +382,7 @@ TEST_F(ApplyForceActionTest, ForceIerrMax) {
 }
 
 TEST_F(ApplyForceActionTest, ForceCalibDataPath) {
-  node_->set_parameter({rclcpp::Parameter("force_calib_data_path", "test.yaml")});
+  node_->set_parameter({ rclcpp::Parameter("force_calib_data_path", "test.yaml") });
   EXPECT_TRUE(action_server_->Init(node_));
 
   ActionType::Goal goal;
@@ -383,8 +397,8 @@ TEST_F(ApplyForceActionTest, ForceCalibDataPath) {
   hardware_->spring_r_position->set_current(5.0);
   action_server_->Update(node_->now());
 
-  // キャリブ結果がないときの指令値と変化があることだけをチェック
-  // キャリブ結果が正しく反映されているかのテストはhrh_gripper_controller_apply_force_calculator-test.cpp
+  // Only check that there are command values ​​and changes when there is no calibi result
+  // Hrh_gripper_controller_apping_force_calculator-test.cppp is reflected correctly.
   EXPECT_GT(std::abs(hardware_->position->command() - 0.1 * -0.05 + 0.15 * -0.05 + 0.4 * 1.0), kEpsilon);
 }
 

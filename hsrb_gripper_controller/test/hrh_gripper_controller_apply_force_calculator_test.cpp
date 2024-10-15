@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018 TOYOTA MOTOR CORPORATION
+Copyright (c) 2022 TOYOTA MOTOR CORPORATION
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file hrh_gripper_controller_apply_force_calculator-test.cpp
+/// @brief Test of class that calculates the insertion power of HRH glippers
 #include <vector>
 #include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
@@ -38,7 +40,7 @@ DAMAGE.
 
 namespace {
 
-// キャリブレーションファイルパス
+// Calibration file path
 const char* const kCalibrationFile = "/tmp/test.yaml";
 
 }  // unnamed namespace
@@ -87,12 +89,10 @@ class ForceCalibrationFile {
     fprintf(f, "%s\n", emitter.c_str());
     fclose(f);
   }
-  ~ForceCalibrationFile() {
-    remove(kCalibrationFile);
-  }
+  ~ForceCalibrationFile() { remove(kCalibrationFile); }
 };
 
-// 挟み込み力計算においてキャリブファイルを正しく読み込んで補正された力を取得できる
+// In the pinched power calculation, you can read the calibi file correctly and obtain the corrected force
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess1) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -102,13 +102,11 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   ForceCalibrationFile force_calibration_file(force, force);
 
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ(((3.0 * 5.0 / 7.0 - 0.1) + (5.0 * 5.0 / 7.0 - 0.1)) / 2,
-            force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
+  EXPECT_EQ(((3.0 * 5.0 / 7.0 - 0.1) + (5.0 * 5.0 / 7.0 - 0.1)) / 2, force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// 挟み込み力計算においてhand_motor_posがキャリブの最大値より大きいとき、力は0.0を返す
+// When Hand_motor_pos is larger than the maximum calibbal value in the pinching power calculation, the force is returned 0.0.
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess2) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -118,13 +116,11 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   ForceCalibrationFile force_calibration_file(force, force);
 
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(1.5, 3.0, 5.0));
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(1.5, -3.0, -5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(1.5, 3.0, 5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(1.5, -3.0, -5.0));
 }
 
-// 挟み込み力計算においてhand_motor_posがキャリブの最小値より小さいとき、力はcalib_points[0][1]との差と0.0の大きい方を返す
+// In the pinching power calculation, when the Hand_motor_pos is smaller than that of the calibib, the difference between Calib_points [0] [1] is returned.
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess3) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -134,13 +130,11 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   ForceCalibrationFile force_calibration_file(force, force);
 
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ(((3.0 * 5.0 / 7.0 - 0.1) + (5.0 * 5.0 / 7.0 - 0.1)) / 2,
-            force_calculator->GetCurrentForce(-0.5, 3.0, 5.0));
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(-0.5, -3.0, -5.0));
+  EXPECT_EQ(((3.0 * 5.0 / 7.0 - 0.1) + (5.0 * 5.0 / 7.0 - 0.1)) / 2, force_calculator->GetCurrentForce(-0.5, 3.0, 5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(-0.5, -3.0, -5.0));
 }
 
-// 挟み込み力計算においてキャリブの点が１つしかなければ力は0.0を返す
+// If there is only one of the calibs in the pinching power calculation, the power returns 0.0.
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure1) {
   std::vector<std::vector<double>> force(1);
   force[0].push_back(0.0);
@@ -148,13 +142,11 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorF
   ForceCalibrationFile force_calibration_file(force, force);
 
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
-  EXPECT_EQ(0.0,
-            force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
+  EXPECT_EQ(0.0, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// 挟み込み力計算においてキャリブの点が2次元で表されていなければキャリブ値を考慮せずに力を返す
+// If the point of the calibs is not represented in 2D in the pinching power calculation, return the power without considering the calibbal value.
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure2) {
   std::vector<std::vector<double>> left_force(1);
   left_force[0].push_back(0.1);
@@ -165,19 +157,15 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorF
   ForceCalibrationFile force_calibration_file(left_force, right_force);
 
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ((3.0 * 5.0 / 7.0 + 5.0 * 5.0 / 7.0) / 2,
-            force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
-  EXPECT_EQ((-3.0 * 5.0 / 7.0 + -5.0 * 5.0 / 7.0) / 2,
-            force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
+  EXPECT_EQ((3.0 * 5.0 / 7.0 + 5.0 * 5.0 / 7.0) / 2, force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
+  EXPECT_EQ((-3.0 * 5.0 / 7.0 + -5.0 * 5.0 / 7.0) / 2, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// 挟み込み力計算においてキャリブファイルが存在しなければデフォルト値で計算した力を返す
+// If there is no calib file in the pinching power calculation, return the calculated force calculated by the default value.
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure3) {
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
-  EXPECT_EQ((3.0 * 1.0 / 1.0 + 5.0 * 1.0 / 1.0) / 2,
-            force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
-  EXPECT_EQ((-3.0 * 1.0 / 1.0 + -5.0 * 1.0 / 1.0) / 2,
-            force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
+  EXPECT_EQ((3.0 * 1.0 / 1.0 + 5.0 * 1.0 / 1.0) / 2, force_calculator->GetCurrentForce(0.5, 3.0, 5.0));
+  EXPECT_EQ((-3.0 * 1.0 / 1.0 + -5.0 * 1.0 / 1.0) / 2, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
 }  // namespace hsrb_gripper_controller

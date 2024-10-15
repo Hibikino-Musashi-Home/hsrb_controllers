@@ -30,10 +30,10 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @brief Handle that mocks hardware for testing
 #include <memory>
 #include <string>
 #include <vector>
-
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <hardware_interface/loaned_state_interface.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
@@ -45,7 +45,8 @@ class Handle {
   using Ptr = std::shared_ptr<Handle>;
 
   Handle(const std::string& joint_name, const std::string& state_name, const std::string& command_name)
-      : current_(0.0), command_(0.0),
+      : current_(0.0),
+        command_(0.0),
         state_handle_(joint_name, state_name, &current_),
         command_handle_(joint_name, command_name, &command_) {}
 
@@ -113,7 +114,6 @@ struct HardwareStub {
     drive_mode = std::make_shared<Handle>(joint_name, "current_drive_mode", "command_drive_mode");
     grasping_flag = std::make_shared<BoolHandle>(joint_name, "current_grasping_flag", "command_grasping_flag");
 
-    // TODO(Takeshita) パラメータにする
     spring_l_position = std::make_shared<Handle>("hand_l_spring_proximal_joint", hardware_interface::HW_IF_POSITION);
     spring_r_position = std::make_shared<Handle>("hand_r_spring_proximal_joint", hardware_interface::HW_IF_POSITION);
 

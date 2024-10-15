@@ -30,9 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// 参考: 和田正義, 4輪駆動式電動車椅子の設計と全方向移動制御,
-///       日本ロボット学会誌 Vol.27 No.3, pp.314〜324, 2009
-/// 上記論文で記述される全方向移動機構の運動学モデルを実装する。
+/// @file twin_caster_drive.hpp
+/// 参考: 和田正義, 4輪駆動式電動車椅子の設計と全方向移動制御, 日本ロボット学会誌 Vol.27 No.3, pp.314〜324, 2009
+/// Implement the athletic model of the all directional mobile mechanism described in the above paper.
 #ifndef HSRB_BASE_CONTROLLERS_TWIN_CASTER_DRIVE_HPP_
 #define HSRB_BASE_CONTROLLERS_TWIN_CASTER_DRIVE_HPP_
 
@@ -50,7 +50,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-// 全方位台車の各ジョイント軸のインデックス
+// Index of each joint axis of all -sided bogies
 enum OmniBaseJointID {
   kJointIDRightWheel,
   kJointIDLeftWheel,
@@ -58,7 +58,7 @@ enum OmniBaseJointID {
   kNumOmniBaseJointIDs
 };
 
-// ロボット状態位置・姿勢のインデックス
+// Robot status position / posture index
 enum BaseCoordinateID {
   kIndexBaseX,
   kIndexBaseY,
@@ -66,7 +66,7 @@ enum BaseCoordinateID {
   kNumBaseCoordinateIDs
 };
 
-/// 台車の寸法情報
+/// Dimensions of bogie
 struct OmniBaseSize {
   // Tread[m]
   double tread;
@@ -76,7 +76,7 @@ struct OmniBaseSize {
   double wheel_radius;
 };
 
-/// @brief 全方向移動機構の運動学モデル
+/// @brief Athletic model of all directional movement mechanism
 class TwinCasterDrive : private boost::noncopyable {
  public:
   using Ptr = std::shared_ptr<TwinCasterDrive>;
@@ -100,20 +100,20 @@ class TwinCasterDrive : private boost::noncopyable {
     caster_odometry_ << 0.0, 0.0, 0.0;
   }
 
-  /// 与えた各関節の速度から実現される荷台部の速度を計算する
-  /// @param joint_velocity [in] 関節角速度（右車輪、左車輪、旋回軸の順）
+  /// Calculate the speed of the loading platform that is realized from the speed of each joint given
+  /// @param Joint_velocity [in] joint angle speed (in the order of right wheel, left wheel, turning axis)
   Eigen::Vector3d ConvertForward(const Eigen::Vector3d& joint_velocity) const {
     return jacobian_ * joint_velocity;
   }
 
-  /// 与えた荷台部の速度から必要な各関節速度を計算する。
-  /// @param base_velocity [in] 荷台部速度（荷台座標系での前後、左右、回転）
+  /// Calculate the required joint speed from the speed of the carrier given.
+  /// @param base_velocity [in] Code of load (front, left and right, left and right, rotation)
   Eigen::Vector3d ConvertInverse(const Eigen::Vector3d& base_velocity) const {
     return inverse_jacobian_ * base_velocity;
   }
 
-  /// 荷台部とキャスター台車のオフセット角を更新。
-  /// @param caster_position [in] 荷台部とキャスター台車のオフセット角(rad)
+  /// Updated the offset angle of the loading platform and caster bogie.
+  /// @param Caster_position [in] Offset angle of loading platform and caster bogie (RAD)
   void Update(double caster_position) {
     const double caster_angle = angles::normalize_angle(caster_position);
     const double r = wheel_radius_;
@@ -127,14 +127,14 @@ class TwinCasterDrive : private boost::noncopyable {
     const double j22 = r * sin_v * 0.5 - r * s * cos_v / w;
     const double j31 = r / w;
     const double j32 = -r / w;
-    // 参考論文中の式(19) の角速度に関する式の右辺第２項の符号は逆ではないかと思われる。
+    // It seems that the sign of the right side of the formula in the formula (19) in the formula (19) in the reference paper is the opposite.
     jacobian_ << j11, j12, 0,
                  j21, j22, 0,
                  j31, j32, -1.0;
     inverse_jacobian_ = jacobian_.inverse();
   }
 
-  /// 荷台部オドメトリを更新。
+  /// Updated the boarding part.
   Eigen::Vector3d UpdateOdometry(double period,
                                  const Eigen::Vector3d& joint_position,
                                  const Eigen::Vector3d& joint_velocity) {
@@ -154,7 +154,7 @@ class TwinCasterDrive : private boost::noncopyable {
     const double v = (vr + vl) * 0.5;
     const double w = (vr - vl) / tread_;
 
-    // 台車部オドメトリの更新
+    // Update of the bogie club Odometry
     caster_odometry_[kIndexBaseTheta] += w * dt;
     const double caster_odom_theta = caster_odometry_[kIndexBaseTheta];
     const double delta_x = v * std::cos(caster_odom_theta) * dt;
@@ -162,7 +162,7 @@ class TwinCasterDrive : private boost::noncopyable {
     caster_odometry_[kIndexBaseX] += delta_x;
     caster_odometry_[kIndexBaseY] += delta_y;
 
-    // 台車部オドメトリとステア軸角度から荷台部オドメトリ更新
+    // Bogie part Odometry and the steer axis angle update to the boarding portion Odometry
     const double odom_x = caster_odometry_[kIndexBaseX] +
                           caster_offset_ * std::cos(caster_odom_theta);
     const double odom_y = caster_odometry_[kIndexBaseY] +

@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_joint_controller.hpp
+/// @brief All -sided bogie joint controller class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 
@@ -42,48 +44,49 @@ DAMAGE.
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <hardware_interface/loaned_state_interface.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 #include <hsrb_base_controllers/filter.hpp>
 #include <hsrb_base_controllers/twin_caster_drive.hpp>
 
 namespace hsrb_base_controllers {
 
-/// 旋回軸速度と車輪速度のリミット
+/// Limit of turning axle speed and wheel speed
 struct VelocityLimit {
-  // 旋回軸速度リミット[rad/s]
+  // Turning axis speed limit [RAD/S]
   double yaw_limit;
-  // 車輪速度リミット[rad/s]
+  // Wheel speed limit [RAD/S]
   double wheel_limit;
 };
 
-/// Jointコントローラクラス
+/// Joint controller class
 class OmniBaseJointController {
  public:
   using Ptr = std::shared_ptr<OmniBaseJointController>;
 
-  explicit OmniBaseJointController(const rclcpp::Node::SharedPtr& node);
+  explicit OmniBaseJointController(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   ~OmniBaseJointController() = default;
 
-  // パラメータ初期化
+  // Parameter initialization
   bool Init();
 
-  // インターフェース設定
+  // Interface settings
   std::vector<std::string> command_interface_names() const;
   std::vector<std::string> state_interface_names() const;
   bool Activate(std::vector<hardware_interface::LoanedCommandInterface>& command_interfaces,
                 std::vector<hardware_interface::LoanedStateInterface>& state_interfaces);
-  // 指令値を計算する
+  // Calculate the command value
   void SetJointCommand(double period, const Eigen::Vector3d output_velocity);
-  // 軸位置を取得する
+  // Get the axis position
   bool GetJointPositions(Eigen::Vector3d& positions_out) const;
-  // 軸速度を取得する
+  // Get the axial speed
   bool GetJointVelocities(Eigen::Vector3d& velocities_out) const;
-  // 旋回軸の目標位置をリセットする
+  // Reset the target position of the turning axis
   void ResetDesiredSteerPosition() {
     desired_steer_pos_ = current_position_interfaces_[kJointIDSteer].get().get_value();
   }
 
-  // アクセサ
+  // Accessor
   Eigen::Vector3d joint_command() const { return joint_command_; }
   OmniBaseSize omnibase_size() const { return omnibase_size_; }
   std::string l_wheel_joint_name() const { return joint_names_[kJointIDLeftWheel]; }
@@ -93,31 +96,31 @@ class OmniBaseJointController {
   double desired_steer_pos() const { return desired_steer_pos_; }
 
  private:
-  // コントローラのノードハンドル
-  rclcpp::Node::SharedPtr node_;
-  // Joint指令値
+  // Controller node handle
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  // Joint command value
   Eigen::Vector3d joint_command_;
-  // 各軸の名前
+  // Name of each axis
   std::vector<std::string> joint_names_;
 
-  // 台車の各軸のハンドラ
+  // Handler of each axis of the bogie
   template <typename T>
   using InterfaceReferences = std::vector<std::reference_wrapper<T>>;
   InterfaceReferences<hardware_interface::LoanedCommandInterface> command_interfaces_;
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_position_interfaces_;
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_velocity_interfaces_;
 
-  // 台車の寸法情報
+  // Dimensions of bogie
   OmniBaseSize omnibase_size_;
-  // 旋回軸の目標位置
+  // Target position of the turning axis
   double desired_steer_pos_;
-  // 台車の運動学モデル
+  // Bogie athletic model
   TwinCasterDrive::Ptr twin_drive_;
-  // 指令速度リミット
+  // Command speed limit
   VelocityLimit velocity_limit_;
-  // エンコーダ値速度閾値
+  // Encoder value speed threshold
   VelocityLimit actual_velocity_threshold_;
-  // 速度フィルタ
+  // Speed ​​filter
   std::vector<Filter<> > velocity_filters_;
 };
 

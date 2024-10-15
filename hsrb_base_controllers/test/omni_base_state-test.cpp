@@ -30,6 +30,9 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_state-test.cpp
+/// @brief Test of the bogie state class of the omnidirectional bogie
+
 #include <gtest/gtest.h>
 
 #include <hsrb_base_controllers/omni_base_state.hpp>
@@ -42,7 +45,7 @@ constexpr double kEpsilon = 1.0e-9;
 
 namespace hsrb_base_controllers {
 
-// actualとdesiredからerrorを計算する
+// Calculate error from Actual and desired
 TEST(ControllerStateTest, UpdateErrorNormal) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -66,7 +69,7 @@ TEST(ControllerStateTest, UpdateErrorNormal) {
   EXPECT_NEAR(state.error.accelerations[0], -4.2, kEpsilon);
 }
 
-// actualとdesiredのサイズが合わない場合，errorは空
+// If the size of Actual and desired does not match, Error is empty
 TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -82,7 +85,7 @@ TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// desiredのある初期化
+// Initialization with desired
 TEST(ControllerBaseStateTest, InitWithDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3),
                             {-0.1, -0.2, -3.0}, {-1.1, -1.2, -1.3}, {-2.1, -2.2, -2.3});
@@ -127,7 +130,7 @@ TEST(ControllerBaseStateTest, InitWithDesired) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// desiredのない初期化
+// Initialization without desired
 TEST(ControllerBaseStateTest, InitWithoutDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3));
 
@@ -141,16 +144,32 @@ TEST(ControllerBaseStateTest, InitWithoutDesired) {
   EXPECT_NEAR(state.actual.velocities[1], 1.1, kEpsilon);
   EXPECT_NEAR(state.actual.velocities[2], 1.3, kEpsilon);
 
+  ASSERT_EQ(state.desired.positions.size(), 3);
+  EXPECT_EQ(state.desired.positions[0], 0.1);
+  EXPECT_EQ(state.desired.positions[1], 0.2);
+  EXPECT_EQ(state.desired.positions[2], M_PI / 2.0);
+
+  ASSERT_EQ(state.desired.velocities.size(), 3);
+  EXPECT_NEAR(state.desired.velocities[0], -1.2, kEpsilon);
+  EXPECT_NEAR(state.desired.velocities[1], 1.1, kEpsilon);
+  EXPECT_NEAR(state.desired.velocities[2], 1.3, kEpsilon);
+
+  ASSERT_EQ(state.error.positions.size(), 3);
+  EXPECT_NEAR(state.error.positions[0], 0.0, kEpsilon);
+  EXPECT_NEAR(state.error.positions[1], 0.0, kEpsilon);
+  EXPECT_NEAR(state.error.positions[2], 0.0, kEpsilon);
+
+  ASSERT_EQ(state.error.velocities.size(), 3);
+  EXPECT_NEAR(state.error.velocities[0], 0.0, kEpsilon);
+  EXPECT_NEAR(state.error.velocities[1], 0.0, kEpsilon);
+  EXPECT_NEAR(state.error.velocities[2], 0.0, kEpsilon);
+
   EXPECT_TRUE(state.actual.accelerations.empty());
-  EXPECT_TRUE(state.desired.positions.empty());
-  EXPECT_TRUE(state.desired.velocities.empty());
   EXPECT_TRUE(state.desired.accelerations.empty());
-  EXPECT_TRUE(state.error.positions.empty());
-  EXPECT_TRUE(state.error.velocities.empty());
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// UpdateErrorでのPI超えの扱いチェック
+// Check out the PI with UpdateERROR
 TEST(ControllerBaseStateTest, UpdateErrorOverPi) {
   ControllerBaseState state(Eigen::Vector3d(0.0, 0.0, 1.0), Eigen::Vector3d::Zero(), {0.0, 0.0, 2.0}, {}, {});
 
@@ -174,7 +193,7 @@ TEST(ControllerBaseStateTest, UpdateErrorOverPi) {
   EXPECT_NEAR(state.error.positions[2], -5.0 + 2.0 * M_PI, kEpsilon);
 }
 
-// 初期化
+// Initialization
 TEST(ControllerJointStateTest, Initialize) {
   ControllerJointState state(Eigen::Vector3d(0.1, 0.2, 0.3), Eigen::Vector3d(1.1, 1.2, 1.3),
                              -0.3, Eigen::Vector3d(-1.1, -1.2, -1.3));
@@ -216,7 +235,7 @@ TEST(ControllerJointStateTest, Initialize) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// JointTrajectoryControllerStateへの変換
+// Conversion to JointTrajectoryControllerstate
 TEST(ConvertTest, JointTrajectoryControllerState) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -274,7 +293,7 @@ TEST(ConvertTest, JointTrajectoryControllerState) {
   EXPECT_NEAR(msg.error.accelerations[0], -4.2, kEpsilon);
 }
 
-// JointTrajectoryPointへの変換
+// Conversion to JointTrajectoryPoint
 TEST(ConvertTest, JointTrajectoryPoint) {
   State state;
   state.positions = {0.1, 0.2, 0.3};
@@ -297,13 +316,14 @@ TEST(ConvertTest, JointTrajectoryPoint) {
   EXPECT_NEAR(msg.accelerations[0], 2.1, kEpsilon);
 }
 
-// StatePublisherで正しく発行される
+// Published correctly by statepublisher
 TEST(StatePublisherTest, Publish) {
-  auto node = rclcpp::Node::make_shared("test_node");
+  auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node->configure();
   node->declare_parameter("state_publish_rate", 2.0);
-
   auto pub = std::make_shared<StatePublisher>(
       node, "~/state", std::vector<std::string>({"joint_1", "joint_2", "joint_3"}));
+  node->activate();
 
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -314,14 +334,16 @@ TEST(StatePublisherTest, Publish) {
   state.desired.accelerations = {-2.1};
   state.UpdateError();
 
+  auto client_node = rclcpp::Node::make_shared("client_node");
   auto counter = std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
-      node, "~/state");
+      client_node, "test_node/state");
   pub->set_last_state_published_time(node->now());
 
   rclcpp::WallRate loop_rate(10.0);
   for (uint32_t i = 0; i < 12; ++i) {
     pub->Publish(state, node->now());
-    rclcpp::spin_some(node);
+    rclcpp::spin_some(client_node);
+    rclcpp::spin_some(node->get_node_base_interface());
     loop_rate.sleep();
   }
   EXPECT_EQ(counter->count(), 2);

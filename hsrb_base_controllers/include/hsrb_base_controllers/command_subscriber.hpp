@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file command_subscriber.hpp
+/// @brief Input command control class for controlling all -level bogie control
 #ifndef HSRB_BASE_CONTROLLERS_COMMAND_SUBSCRIBER_HPP_
 #define HSRB_BASE_CONTROLLERS_COMMAND_SUBSCRIBER_HPP_
 
@@ -52,84 +54,81 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// 入力指令クラス
+/// Input command class
 class CommandSubscriber : private boost::noncopyable {
  public:
-  CommandSubscriber(const rclcpp::Node::SharedPtr& node,
+  CommandSubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                     IControllerCommandInterface* controller);
   virtual ~CommandSubscriber() {}
 
  protected:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   IControllerCommandInterface* controller_;
 };
 
-/// 入力速度指令クラス
+/// Input speed command class
 class CommandVelocitySubscriber : public CommandSubscriber {
  public:
   using Ptr = std::shared_ptr<CommandVelocitySubscriber>;
 
-  CommandVelocitySubscriber(const rclcpp::Node::SharedPtr& node,
+  CommandVelocitySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                             IControllerCommandInterface* controller);
   virtual ~CommandVelocitySubscriber() {}
 
  private:
-  // 入力指令速度コールバック
+  // Input command speed callback
   void CommandVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
-  // 入力速度サブスクライバ
+  // Input speed sub slider
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr velocity_subscriber_;
 };
 
-/// 入力軌道指令クラス
+/// Input orbital command class
 class CommandTrajectorySubscriber : public CommandSubscriber {
  public:
   using Ptr = std::shared_ptr<CommandTrajectorySubscriber>;
 
-  CommandTrajectorySubscriber(const rclcpp::Node::SharedPtr& node,
+  CommandTrajectorySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                               IControllerCommandInterface* controller);
   virtual ~CommandTrajectorySubscriber() {}
 
  private:
-  // 入力指令軌道コールバック
+  // Input command trajectory callback
   void CommandTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
 
-  // 入力軌道サブスクライバ
+  // Input orbital sub -scriver
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_subscriber_;
 };
 
 
-/// 入力軌道アクション指令クラス
-// TODO(Takeshita) toleranceの扱い周りがros1の頃より劣化しているので要検討
-//                 原因はfollow_trajectory_controllerの実装に寄せているから
-//                 velocity使っていない，アクションゴールのtoleranceを無視
+/// Input orbital action command class
 class TrajectoryActionServer : public CommandSubscriber {
  public:
   using Ptr = std::shared_ptr<TrajectoryActionServer>;
 
-  TrajectoryActionServer(const rclcpp::Node::SharedPtr& node,
+  TrajectoryActionServer(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                          const std::vector<std::string>& cordinates,
                          IControllerCommandInterface* controller);
   virtual ~TrajectoryActionServer() {}
 
-  // アクションの結果の更新を行う
+  // Update the results of action
   void UpdateActionResult(int32_t error_code);
-  // フィードバックの発行
+  // Issuance of feedback
   void SetFeedback(const ControllerBaseState& state, const rclcpp::Time& stamp);
-  // 現在追従中のゴールをクリア
+  // Clear the goal currently following
   void PreemptActiveGoal();
 
  private:
-  // アクション状態更新周期
+  // Action status update cycle
   double action_monitor_period_;
-  // 台車関節名
+  // Bogie joint name
   std::vector<std::string> cordinates_;
-  // アクションのGoalHandle
+  // Goalhandle for action
   using RealtimeGoalHandle = realtime_tools::RealtimeServerGoalHandle<control_msgs::action::FollowJointTrajectory>;
   using RealtimeGoalHandlePtr = std::shared_ptr<RealtimeGoalHandle>;
   realtime_tools::RealtimeBuffer<RealtimeGoalHandlePtr> goal_handle_buffer_;
 
-  // アクションサーバーとコールバック関数群
+  // Action server and callback function group
   using ServerGoalHandle = rclcpp_action::ServerGoalHandle<control_msgs::action::FollowJointTrajectory>;
   using ServerGoalHandlePtr = std::shared_ptr<ServerGoalHandle>;
 
@@ -140,7 +139,7 @@ class TrajectoryActionServer : public CommandSubscriber {
   rclcpp_action::CancelResponse CancelCallback(const ServerGoalHandlePtr goal_handle);
   void FeedbackSetupCallback(ServerGoalHandlePtr goal_handle);
 
-  // アクション実行時のタイマー
+  // Timer for action execution
   rclcpp::TimerBase::SharedPtr goal_handle_timer_;
 };
 

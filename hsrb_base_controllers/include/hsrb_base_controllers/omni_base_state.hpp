@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_state.hpp
+/// @brief Bogie state class of all -sided plants
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 
@@ -39,6 +41,7 @@ DAMAGE.
 
 #include <control_msgs/msg/joint_trajectory_controller_state.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <realtime_tools/realtime_publisher.h>
 
 #include <hsrb_base_controllers/twin_caster_drive.hpp>
@@ -92,7 +95,7 @@ class StatePublisher {
  public:
   using Ptr = std::shared_ptr<StatePublisher>;
 
-  StatePublisher(const rclcpp::Node::SharedPtr& node,
+  StatePublisher(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                  const std::string& topic_name,
                  const std::vector<std::string>& joint_names);
 
@@ -103,7 +106,7 @@ class StatePublisher {
   }
 
  private:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   std::vector<std::string> joint_names_;
   rclcpp::Duration state_publish_period_;
 
@@ -111,7 +114,7 @@ class StatePublisher {
   std::unique_ptr<RealtimePublisher> publisher_;
   rclcpp::Publisher<control_msgs::msg::JointTrajectoryControllerState>::SharedPtr publisher_impl_;
 
-  // 最後に状態を発行した時間
+  // The last time I issued the state
   rclcpp::Time last_state_published_time_;
 };
 

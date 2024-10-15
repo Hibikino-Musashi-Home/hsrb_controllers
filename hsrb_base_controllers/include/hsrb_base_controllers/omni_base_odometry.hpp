@@ -30,6 +30,8 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
+/// @file omni_base_odometry.hpp
+/// @brief Odome bogie Odometri class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_ODOMETRY_HPP_
 
@@ -38,6 +40,7 @@ DAMAGE.
 
 #include <Eigen/Core>
 
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <realtime_tools/realtime_publisher.h>
 #include <tf2_msgs/msg/tf_message.hpp>
 
@@ -46,60 +49,60 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// オドメトリ計算クラス
+/// Odometry calculation class
 class Odometry {
  public:
   using Ptr = std::shared_ptr<Odometry>;
 
-  explicit Odometry(const rclcpp::Node::SharedPtr& node);
+  explicit Odometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   virtual ~Odometry() {}
 
-  // オドメトリを更新する
+  // Update the odometri
   virtual void UpdateOdometry(double period,
                               const Eigen::Vector3d& positions,
                               const Eigen::Vector3d& velocities) = 0;
 
-  // アクセサ
+  // Accessor
   Eigen::Vector3d odometry() const { return odometry_; }
   Eigen::Vector3d velocity() const { return velocity_; }
 
  protected:
-  // 台車オドメトリ
+  // Bogie Odometry
   Eigen::Vector3d odometry_;
-  // 台車速度
+  // Bogie speed
   Eigen::Vector3d velocity_;
 };
 
-/// 全方位台車オドメトリ計算クラス
+/// Omnidistant bogie Odometry calculation class
 class BaseOdometry : public Odometry {
  public:
   using Ptr = std::shared_ptr<BaseOdometry>;
 
-  explicit BaseOdometry(const rclcpp::Node::SharedPtr& node);
+  explicit BaseOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   virtual ~BaseOdometry() {}
 
-  // オドメトリを更新する
+  // Update the odometri
   virtual void UpdateOdometry(double period,
                               const Eigen::Vector3d& positions,
                               const Eigen::Vector3d& velocities);
-  // オドメトリデータを初期化する
+  // Initialize the odometri data
   void InitOdometry();
 
  private:
-  // オドメトリ
+  // Odometori
   InputOdometry::Ptr input_odom_;
 };
 
-/// 全方位台車ホイールオドメトリ計算クラス
+/// Omnidistant bogie Wheel Odometry Calculating Class
 class WheelOdometry : public Odometry {
  public:
   using Ptr = std::shared_ptr<WheelOdometry>;
 
-  WheelOdometry(const rclcpp::Node::SharedPtr& node, const OmniBaseSize& omnibase_size);
+  WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const OmniBaseSize& omnibase_size);
   virtual ~WheelOdometry() {}
-  // オドメトリを更新する
+  // Update the odometri
   virtual void UpdateOdometry(double period, const Eigen::Vector3d& positions, const Eigen::Vector3d& velocities);
-  // オドメトリを発行する
+  // Publish anodometry
   virtual void PublishOdometry(const rclcpp::Time& time);
 
   void set_last_odometry_published_time(const rclcpp::Time& time) {
@@ -110,34 +113,34 @@ class WheelOdometry : public Odometry {
   }
 
  private:
-  // オドメトリに関するフレーム名
+  // Frame name for odometry
   std::string tf_prefix_;
   std::string wheel_base_frame_;
   std::string wheel_odom_frame_;
-  // 全方位台車モデル
+  // Omnidistant bogie model
   TwinCasterDrive::Ptr twin_drive_;
 
-  // 最後にオドメトリを発行した時間
+  // The last time I issued an odometri
   rclcpp::Time last_odometry_published_time_;
-  // 最後にオドメトリtfを発行した時間
+  // The last time I issued the Odometry TF
   rclcpp::Time last_transform_published_time_;
 
-  // オドメトリパブリッシャ
+  // Odometry publisher
   using OdometryPublisher = realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>;
   using OdometryPublisherPtr = std::unique_ptr<OdometryPublisher>;
   OdometryPublisherPtr odometry_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_publisher_impl_;
 
-  // オドメトリ発行の周期
+  // Odometry issuance cycle
   rclcpp::Duration odometry_publish_period_;
 
-  // オドメトリtfパブリッシャ
+  // Odome TF Publisher
   using TFPublisher = realtime_tools::RealtimePublisher<tf2_msgs::msg::TFMessage>;
   using TFPublisherPtr = std::unique_ptr<TFPublisher>;
   TFPublisherPtr transform_publisher_;
   rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr transform_publisher_impl_;
 
-  // オドメトリtf発行の周期
+  // Odometry TF issuance cycle
   rclcpp::Duration transform_publish_period_;
 };
 
