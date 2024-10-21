@@ -16,6 +16,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>lifecycle_msgs</depend>
   <depend>controller_interface</depend>
   <depend>hsrb_servomotor_protocol</depend>
   <depend>joint_trajectory_controller</depend>
