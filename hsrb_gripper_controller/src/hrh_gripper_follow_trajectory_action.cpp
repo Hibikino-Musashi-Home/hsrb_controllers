@@ -127,9 +127,8 @@ void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
   trajectory_msgs::msg::JointTrajectoryPoint desired_state;
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator start_segment_it;
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator end_segment_it;
-  joint_trajectory_controller::interpolation_methods::InterpolationMethod interpolation_method =
-      joint_trajectory_controller::interpolation_methods::InterpolationMethod::NONE;
-  (*trajectory_active_ptr_)->sample(time, interpolation_method, desired_state, start_segment_it, end_segment_it);
+  (*trajectory_active_ptr_)->sample(time, joint_trajectory_controller::interpolation_methods::DEFAULT_INTERPOLATION,
+                                    desired_state, start_segment_it, end_segment_it);
   last_command_state_ = desired_state;
 
   controller_->SetComandPosition(desired_state.positions[0]);
