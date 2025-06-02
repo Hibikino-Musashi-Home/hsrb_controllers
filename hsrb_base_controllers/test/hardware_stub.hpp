@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Handle that mocks hardware for testing
+/// @brief Handle that simulates hardware for testing
 
 #include <memory>
 #include <string>
@@ -80,7 +80,7 @@ class CommandPositionHandle : public Handle {
         update_frequency_(update_frequency) {}
   virtual ~CommandPositionHandle() = default;
 
-  hardware_interface::LoanedCommandInterface GetPositionCommandInterface() {
+  hardware_interface::LoanedCommandInterface GetCommandInterface() {
     return hardware_interface::LoanedCommandInterface(command_position_handle_);
   }
 
@@ -104,7 +104,7 @@ class CommandVelocityHandle : public Handle {
 
   virtual ~CommandVelocityHandle() = default;
 
-  hardware_interface::LoanedCommandInterface GetVelocityCommandInterface() {
+  hardware_interface::LoanedCommandInterface GetCommandInterface() {
     return hardware_interface::LoanedCommandInterface(command_velocity_handle_);
   }
 
@@ -118,10 +118,11 @@ class CommandVelocityHandle : public Handle {
   double update_frequency_;
 };
 
+template<typename SteerCommandHandleType>
 struct HardwareStub {
   using Ptr = std::shared_ptr<HardwareStub>;
 
-  CommandPositionHandle::Ptr steer_handle;
+  typename SteerCommandHandleType::Ptr steer_handle;
   CommandVelocityHandle::Ptr l_wheel_handle;
   CommandVelocityHandle::Ptr r_wheel_handle;
 
@@ -129,13 +130,13 @@ struct HardwareStub {
   std::vector<hardware_interface::LoanedStateInterface> state_interfaces;
 
   explicit HardwareStub(double update_frequency) {
-    steer_handle = std::make_shared<CommandPositionHandle>("base_roll_joint", update_frequency);
+    steer_handle = std::make_shared<SteerCommandHandleType>("base_roll_joint", update_frequency);
     l_wheel_handle = std::make_shared<CommandVelocityHandle>("base_l_drive_wheel_joint", update_frequency);
     r_wheel_handle = std::make_shared<CommandVelocityHandle>("base_r_drive_wheel_joint", update_frequency);
 
-    command_interfaces.emplace_back(steer_handle->GetPositionCommandInterface());
-    command_interfaces.emplace_back(l_wheel_handle->GetVelocityCommandInterface());
-    command_interfaces.emplace_back(r_wheel_handle->GetVelocityCommandInterface());
+    command_interfaces.emplace_back(steer_handle->GetCommandInterface());
+    command_interfaces.emplace_back(l_wheel_handle->GetCommandInterface());
+    command_interfaces.emplace_back(r_wheel_handle->GetCommandInterface());
 
     state_interfaces.emplace_back(steer_handle->GetPositionStateInterface());
     state_interfaces.emplace_back(steer_handle->GetVelocityStateInterface());

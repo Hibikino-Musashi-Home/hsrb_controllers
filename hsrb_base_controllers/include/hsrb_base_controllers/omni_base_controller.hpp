@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_controller.hpp
-/// @brief Omnidistant bogie controller class
+/// @brief Omnidirectional Cart Controller Class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROLLER_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROLLER_HPP_
 
@@ -50,7 +50,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Omnidistant bogie speed controller class
+/// Omnidirectional Cart Velocity Controller Class
 class OmniBaseController
     : public controller_interface::ControllerInterface,
       public IControllerCommandInterface {
@@ -58,66 +58,66 @@ class OmniBaseController
   OmniBaseController() = default;
   ~OmniBaseController() = default;
 
-  // Initialization of controller
+  // Controller Initialization
   controller_interface::CallbackReturn on_init() override;
 
-  // Ros2_control interface settings
+  // ros2_control Interface Configuration
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-  // Calculate and update the bogie joint speed
+  // Calculate and Update Cart Joint Angular Velocity
   controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-  // Functions called at configure
+  // Function Called During Configure
   controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
-  // Functions called during Activate
+  // Function Called During Activate
   controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
-  // Functions called during DEACTIVATE
+  // Function Called During Deactivate
   controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
-  // Return if you can accept the command
+  // Returns Whether Commands Can Be Accepted
   bool IsAcceptable() override;
 
-  // Set the input speed command
+  // Set Input Velocity Command
   void UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) override;
 
-  // Verify the input orbit command
+  // Validate Input Trajectory Command
   bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) override;
-  // Set the input orbit command
+  // Set Input Trajectory Command
   void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) override;
-  // Reset the input orbit
+  // Reset Input Trajectory
   void ResetTrajectory() override;
 
  protected:
-  // ControllerInterface :: Initialization and testing for parts other than INIT
+  // Initialization Part Other Than ControllerInterface::init, Split for Testing
   bool InitImpl();
 
-  // Available in track tracking
+  // Tolerance for Trajectory Following
   SegmentTolerances default_tolerances_;
   SegmentTolerances active_tolerances_;
-  // Check for Tolerances while tracking
-  // If you continue to follow, return the positive number. If you stop following, return the constrol_msgs/action/FollowJointtrajectory error code (0 ~ -5).
+  // Check Tolerances During Trajectory Following
+  // Returns a Positive Number for Continuing Following, or an Error Code (0 ~ -5) of control_msgs/action/FollowJointTrajectory for Stopping Following
   int32_t CheckTorelances(const ControllerBaseState& state, bool before_last_point, double time_from_trajectory_end);
 
-  // Input Speed ​​Directors Subscler
+  // Input Velocity Command Subscriber
   CommandVelocitySubscriber::Ptr velocity_subscriber_;
-  // Input orbital command subcliver
+  // Input Trajectory Command Subscriber
   CommandTrajectorySubscriber::Ptr trajectory_subscriber_;
-  // Input orbit Action command server
+  // Input Trajectory Action Command Server
   TrajectoryActionServer::Ptr trajectory_action_;
 
-  // Joint controller
-  OmniBaseJointController::Ptr joint_controller_;
+  // Joint Controller
+  OmniBaseJointControllerBase::Ptr joint_controller_;
 
-  // Bogie wheel and dometry calculation class
+  // Cart Wheel Odometry Calculation Class
   BaseOdometry::Ptr base_odometry_;
   WheelOdometry::Ptr wheel_odometry_;
 
-  // Class to calculate the command speed of the bogie
+  // Class for Calculating Cart Command Velocity
   OmniBaseVelocityControl::Ptr velocity_control_;
   OmniBaseTrajectoryControl::Ptr trajectory_control_;
 
-  // Issuance of a bogie condition
+  // Publish Cart State
   StatePublisher::Ptr joint_state_publisher_;
   StatePublisher::Ptr base_state_publisher_;
 };

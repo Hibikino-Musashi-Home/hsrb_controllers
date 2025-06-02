@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_odometry.cpp
-/// @brief Odome bogie Odometri class
+/// @brief Omnidirectional Cart Odometry Class
 #include <string>
 
 #include <tmc_utils/qos.hpp>
@@ -40,26 +40,26 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Odometry Publish frequency default value [Hz]
+// Default publishing frequency of cart odometry [Hz]
 constexpr double kDefaultOdometryPublishRate = 30.0;
-// Bogie Odometry TF Publish frequency default value [Hz]
+// Default publishing frequency of cart odometry TF [Hz]
 constexpr double kDefaultTransformPublishRate = 30.0;
 }
 
 namespace hsrb_base_controllers {
 
-/// Initialization of the Odometry calculation class
+/// Initialize the odometry calculation class
 Odometry::Odometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : odometry_(Eigen::Vector3d::Zero()),
       velocity_(Eigen::Vector3d::Zero()) {}
 
 
-/// Initialization of all -scale bogies wheel odmetry calculation class
+/// Initialize the omnidirectional cart wheel odometry calculation class
 BaseOdometry::BaseOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) : Odometry(node) {
   input_odom_ = std::make_shared<InputOdometry>(node);
 }
 
-/// Update the odometri
+/// Update odometry
 void BaseOdometry::UpdateOdometry(double period,
                                   const Eigen::Vector3d& positions,
                                   const Eigen::Vector3d& velocities) {
@@ -68,31 +68,31 @@ void BaseOdometry::UpdateOdometry(double period,
               current_odom.pose.pose.position.y,
               2.0 * std::atan2(current_odom.pose.pose.orientation.z,
                                current_odom.pose.pose.orientation.w);
-  // Because there is a possibility that there will be an odometri that cannot calculate the speed, such as a laserodometry.
-  // Enter the speed calculated in the Controller
+  // Because odometry that cannot calculate speed may be included, such as laser odometry
+  // Input the speed calculated within the controller
   velocity_ = velocities;
 }
 
-/// Initialize the odometri data
+/// Initialize odometry data
 void BaseOdometry::InitOdometry() {
   input_odom_->InitOdometry();
 }
 
-/// Initialization of all -scale bogies wheel odmetry calculation class
+/// Initialize the omnidirectional cart wheel odometry calculation class
 WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const OmniBaseSize& omnibase_size)
     : Odometry(node),
       last_odometry_published_time_(node->now()),
       last_transform_published_time_(node->now()),
       odometry_publish_period_(0, 0),
       transform_publish_period_(0, 0) {
-  // Get a frame name for the bogie Odometry
+  // Retrieve the frame name related to cart odometry
   wheel_odom_frame_ = GetParameter(node, "wheel_odom_map_frame", "odom");
   wheel_base_frame_ = GetParameter(node, "wheel_odom_base_frame", "base_footprint_wheel");
   tf_prefix_ = GetParameter(node, "tf_prefix", "");
-  // Parameters set of omnidirectional bogie models
+  // Set parameters for the omnidirectional cart model
   twin_drive_ = std::make_shared<TwinCasterDrive>(omnibase_size);
 
-  // Set an odometri
+  // Set the odometry publisher
   odometry_publisher_impl_ = node->create_publisher<nav_msgs::msg::Odometry>(
       "~/wheel_odom", rclcpp::SystemDefaultsQoS());
   odometry_publisher_ = std::make_unique<OdometryPublisher>(odometry_publisher_impl_);
@@ -102,40 +102,41 @@ WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& n
   transform_publisher_ = std::make_unique<TFPublisher>(transform_publisher_impl_);
   transform_publisher_->msg_.transforms.resize(1);
 
-  // Acquired the public spacing interval of the bogie Odometry
+  // Retrieve the publishing interval of cart odometry
   const double odometry_publish_rate = GetPositiveParameter(node, "odometry_publish_rate", kDefaultOdometryPublishRate);
   odometry_publish_period_ = rclcpp::Duration::from_seconds(1.0 / odometry_publish_rate);
-  // Acquired the public spacing interval of bogie Odometry TF
+  // Retrieve the publishing interval of cart odometry TF
   const double transform_publish_rate = GetPositiveParameter(node, "transform_publish_rate",
                                                              kDefaultTransformPublishRate);
   transform_publish_period_ = rclcpp::Duration::from_seconds(1.0 / transform_publish_rate);
 }
 
-/// Update wheeldeodometry
+/// Update wheel odometry
 void WheelOdometry::UpdateOdometry(double period,
                                    const Eigen::Vector3d& positions,
                                    const Eigen::Vector3d& velocities) {
-  // Update the togock speed from the wheel position and speed
+  // Update odometry and cart speed based on wheel position and speed
   odometry_ = twin_drive_->UpdateOdometry(period, positions, velocities);
   twin_drive_->Update(positions[kJointIDSteer]);
   velocity_ = twin_drive_->ConvertForward(velocities);
 }
 
 
-/// Publish anodometry
+/// Issue odometry
 void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
   const Eigen::Vector3d wheel_odometry = odometry_;
   const Eigen::Vector3d wheel_odom_velocity = velocity_;
   const Eigen::Quaterniond wheel_quat_trans(
       Eigen::AngleAxisd(wheel_odometry(kIndexBaseTheta), Eigen::Vector3d::UnitZ()));
 
-  // Issued Odometrytopic
+  // Publish the odometry topic
   if (time - last_odometry_published_time_ >= odometry_publish_period_) {
     last_odometry_published_time_ += odometry_publish_period_;
-    // Issued wheel -menetto topic
+    // Publish the wheel odometry topic
     if (odometry_publisher_ && odometry_publisher_->trylock()) {
       auto& msg = odometry_publisher_->msg_;
       msg.header.stamp = time;
+      // TODO(Takeshita) 厳密にはtf::resolveに相当する関数が必要
       msg.header.frame_id = tf_prefix_ + wheel_odom_frame_;
       msg.child_frame_id = tf_prefix_ + wheel_base_frame_;
       msg.pose.pose.position.x = wheel_odometry(kIndexBaseX);
@@ -152,7 +153,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     }
   }
 
-  // Issued Odometry TF
+  // Publish the odometry TF
   if (time - last_transform_published_time_ >= transform_publish_period_) {
     last_transform_published_time_ += transform_publish_period_;
     geometry_msgs::msg::Transform transform;
@@ -164,7 +165,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     transform.rotation.z = wheel_quat_trans.z();
     transform.rotation.w = wheel_quat_trans.w();
 
-    // Issued TF of wheeldometry
+    // Publish the wheel odometry TF
     if (transform_publisher_ && transform_publisher_->trylock()) {
       auto& msg = transform_publisher_->msg_.transforms.front();
       msg.header.stamp = time;

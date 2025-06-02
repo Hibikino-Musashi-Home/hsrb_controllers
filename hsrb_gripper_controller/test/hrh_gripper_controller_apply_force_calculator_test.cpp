@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file hrh_gripper_controller_apply_force_calculator-test.cpp
-/// @brief Test of class that calculates the insertion power of HRH glippers
+/// @brief Test class for calculating the gripping force of the HRH gripper
 #include <vector>
 #include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
@@ -92,7 +92,7 @@ class ForceCalibrationFile {
   ~ForceCalibrationFile() { remove(kCalibrationFile); }
 };
 
-// In the pinched power calculation, you can read the calibi file correctly and obtain the corrected force
+// Correctly read the calib file and obtain the corrected force in the gripping force calculation
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess1) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -106,7 +106,7 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   EXPECT_EQ(0.0, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// When Hand_motor_pos is larger than the maximum calibbal value in the pinching power calculation, the force is returned 0.0.
+// In the gripping force calculation, when hand_motor_pos is greater than the maximum value of calibration, return force as 0.0
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess2) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -120,7 +120,7 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   EXPECT_EQ(0.0, force_calculator->GetCurrentForce(1.5, -3.0, -5.0));
 }
 
-// In the pinching power calculation, when the Hand_motor_pos is smaller than that of the calibib, the difference between Calib_points [0] [1] is returned.
+// In the gripping force calculation, when hand_motor_pos is less than the minimum value of calibration, return the greater of the difference from calib_points[0][1] or 0.0
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorSuccess3) {
   std::vector<std::vector<double>> force(2);
   force[0].push_back(0.0);
@@ -134,7 +134,7 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorS
   EXPECT_EQ(0.0, force_calculator->GetCurrentForce(-0.5, -3.0, -5.0));
 }
 
-// If there is only one of the calibs in the pinching power calculation, the power returns 0.0.
+// In the gripping force calculation, if there is only one point of calibration, return force as 0.0
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure1) {
   std::vector<std::vector<double>> force(1);
   force[0].push_back(0.0);
@@ -146,7 +146,7 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorF
   EXPECT_EQ(0.0, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// If the point of the calibs is not represented in 2D in the pinching power calculation, return the power without considering the calibbal value.
+// In the gripping force calculation, if the calibration points are not represented in 2D, return force without considering the calib values
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure2) {
   std::vector<std::vector<double>> left_force(1);
   left_force[0].push_back(0.1);
@@ -161,7 +161,7 @@ TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorF
   EXPECT_EQ((-3.0 * 5.0 / 7.0 + -5.0 * 5.0 / 7.0) / 2, force_calculator->GetCurrentForce(0.5, -3.0, -5.0));
 }
 
-// If there is no calib file in the pinching power calculation, return the calculated force calculated by the default value.
+// If the calibration file does not exist, return the force calculated using default values
 TEST_F(HrhGripperControllerApplyForceCalculatorTest, ApplyForceActionCalculatorFailure3) {
   auto force_calculator = std::make_shared<HrhGripperApplyForceCalculator>(kCalibrationFile, logger_);
   EXPECT_EQ((3.0 * 1.0 / 1.0 + 5.0 * 1.0 / 1.0) / 2, force_calculator->GetCurrentForce(0.5, 3.0, 5.0));

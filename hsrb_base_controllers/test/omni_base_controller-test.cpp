@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_controller-test.cpp
-/// @brief Test of all -sided bogie speed controller
+/// @brief Test of omnidirectional cart velocity controller
 
 #include <string>
 #include <vector>
@@ -57,7 +57,7 @@ constexpr double kVelocityErrorThreshold = 0.1;
 constexpr double kWheelVelocityLimitThreshold = 8.5;
 constexpr double kYawVelocityLimitThreshold = 1.8;
 
-// Creating a test input orbit
+// Create test input trajectory
 trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
   trajectory_msgs::msg::JointTrajectory trajectory;
   trajectory.joint_names = {"odom_x", "odom_y", "odom_t"};
@@ -79,6 +79,16 @@ trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
 
 namespace hsrb_base_controllers {
 
+struct PositionHandle {
+  using CommandHandleType = CommandPositionHandle;
+  static constexpr bool use_base_roll_velocity = false;
+};
+struct VelocityHandle {
+  using CommandHandleType = CommandVelocityHandle;
+  static constexpr bool use_base_roll_velocity = true;
+};
+
+template<typename CommandHandleType>
 class OmniBaseControllerTest : public ::testing::Test {
  public:
   void SetupController();
@@ -87,7 +97,7 @@ class OmniBaseControllerTest : public ::testing::Test {
   std::shared_ptr<OmniBaseController> controller_;
   rclcpp_lifecycle::LifecycleNode::SharedPtr controller_node_;
   rclcpp::Node::SharedPtr client_node_;
-  HardwareStub::Ptr hardware_;
+  typename HardwareStub<typename CommandHandleType::CommandHandleType>::Ptr hardware_;
   TopicRelay<nav_msgs::msg::Odometry>::Ptr odom_relay_;
   SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>::Ptr state_counter_;
   rclcpp::Time last_update_time_;
@@ -102,7 +112,8 @@ class OmniBaseControllerTest : public ::testing::Test {
   void WaitForReady(typename std::shared_future<Handle>& future, rclcpp::WallRate& rate);
 };
 
-void OmniBaseControllerTest::SetupController() {
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::SetupController() {
   controller_ = std::make_shared<OmniBaseController>();
 
   rclcpp::NodeOptions options = rclcpp::NodeOptions()
@@ -118,10 +129,11 @@ void OmniBaseControllerTest::SetupController() {
   options.append_parameter_override<float>("odom_t.p_gain", 0.01);
   options.append_parameter_override<float>("constraints.odom_x.trajectory", 0.5);
   options.append_parameter_override<float>("constraints.goal_time", 0.5);
+  options.append_parameter_override<bool>("use_base_roll_velocity", CommandHandleType::use_base_roll_velocity);
 
   EXPECT_EQ(controller_->init(kControllerNodeName, "", options), controller_interface::return_type::OK);
   EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-  hardware_ = std::make_shared<HardwareStub>(kUpdateFrequency);
+  hardware_ = std::make_shared<HardwareStub<typename CommandHandleType::CommandHandleType>>(kUpdateFrequency);
   controller_->assign_interfaces(std::move(hardware_->command_interfaces), std::move(hardware_->state_interfaces));
   EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
@@ -135,7 +147,8 @@ void OmniBaseControllerTest::SetupController() {
   last_update_time_ = controller_node_->get_clock()->now();
 }
 
-void OmniBaseControllerTest::SpinOnce(rclcpp::WallRate& rate, bool do_update) {
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::SpinOnce(rclcpp::WallRate& rate, bool do_update) {
   rate.sleep();
   rclcpp::spin_some(client_node_);
   rclcpp::spin_some(controller_node_->get_node_base_interface());
@@ -148,9 +161,11 @@ void OmniBaseControllerTest::SpinOnce(rclcpp::WallRate& rate, bool do_update) {
   last_update_time_ = current_time;
 }
 
+template<typename CommandHandleType>
 template <typename Action>
-bool OmniBaseControllerTest::WaitForStatus(typename rclcpp_action::ClientGoalHandle<Action>::SharedPtr goal_handle,
-                                           int8_t expected, bool do_update) {
+bool OmniBaseControllerTest<CommandHandleType>::WaitForStatus(
+    typename rclcpp_action::ClientGoalHandle<Action>::SharedPtr goal_handle,
+    int8_t expected, bool do_update) {
   const auto end_time = std::chrono::system_clock::now() + std::chrono::duration<double>(5.0);
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   while (goal_handle->get_status() != expected) {
@@ -163,8 +178,10 @@ bool OmniBaseControllerTest::WaitForStatus(typename rclcpp_action::ClientGoalHan
   return true;
 }
 
+template<typename CommandHandleType>
 template <typename Handle>
-void OmniBaseControllerTest::WaitForReady(typename std::shared_future<Handle>& future, rclcpp::WallRate& rate) {
+void OmniBaseControllerTest<CommandHandleType>::WaitForReady(
+    typename std::shared_future<Handle>& future, rclcpp::WallRate& rate) {
   const auto end_time = std::chrono::system_clock::now() + std::chrono::duration<double>(5.0);
   while (rclcpp::ok()) {
     if (std::chrono::system_clock::now() > end_time) {
@@ -179,13 +196,16 @@ void OmniBaseControllerTest::WaitForReady(typename std::shared_future<Handle>& f
   }
 }
 
-/// Give X and Y a equivalent speed command and move the bogie
-TEST_F(OmniBaseControllerTest, CommandVelocity) {
-  SetupController();
-  auto publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
+typedef ::testing::Types<PositionHandle, VelocityHandle> TestTypes;
+TYPED_TEST_SUITE(OmniBaseControllerTest, TestTypes);
+
+/// Move the cart by giving constant speed commands to x, y
+TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
+  this->SetupController();
+  auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
       std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
   auto wheel_odom_counter = std::make_shared<SubscriptionCounter<nav_msgs::msg::Odometry>>(
-      client_node_, std::string(kControllerNodeName) + "/wheel_odom");
+      this->client_node_, std::string(kControllerNodeName) + "/wheel_odom");
 
   geometry_msgs::msg::Twist command_velocity;
   command_velocity.linear.x = -0.1;
@@ -194,12 +214,12 @@ TEST_F(OmniBaseControllerTest, CommandVelocity) {
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 199; ++i) {
     publisher->publish(command_velocity);
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
-  // The default is 50Hz
-  EXPECT_EQ(state_counter_->count(), 99);
-  auto base_state = state_counter_->last_msg();
+  // Default is 50Hz
+  EXPECT_EQ(this->state_counter_->count(), 99);
+  auto base_state = this->state_counter_->last_msg();
 
   ASSERT_EQ(base_state.joint_names.size(), 3);
   EXPECT_EQ(base_state.joint_names[0], "odom_x");
@@ -228,34 +248,34 @@ TEST_F(OmniBaseControllerTest, CommandVelocity) {
   EXPECT_NEAR(wheel_odom.twist.twist.angular.z, 0.0, kEpsilon);
 }
 
-/// Whether you can correctly follow the test track entered in the topic
-TEST_F(OmniBaseControllerTest, SendTrajectoryTopic) {
-  SetupController();
-  auto publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+/// Check if it correctly follows the test trajectory input through the topic
+TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
+  this->SetupController();
+  auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
   publisher->publish(GetTestTrajectory());
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
-  auto base_state = state_counter_->last_msg();
+  auto base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.1, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.1, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.3, kEpsilon);
 
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
 
-    // It existed in the original test, so check it out.
-    auto state = state_counter_->last_msg();
+    // Originally existed in the test, so check it just in case
+    auto state = this->state_counter_->last_msg();
     for (int i = 0; i < 3; ++i) {
       ASSERT_LT(fabs(state.error.positions[i]),  kPositionErrorThreshold);
       ASSERT_LT(fabs(state.error.velocities[i]), kVelocityErrorThreshold);
     }
   }
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
@@ -267,12 +287,12 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kVelocityErrorThreshold);
 }
 
-/// Whether you can correctly follow the test track entered via the action
-TEST_F(OmniBaseControllerTest, SendTrajectoryAction) {
-  SetupController();
+/// Check if it correctly follows the test trajectory input through action
+TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -296,9 +316,9 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryAction) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
-  auto base_state = state_counter_->last_msg();
+  auto base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.1, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.1, kEpsilon);
@@ -333,28 +353,28 @@ TEST_F(OmniBaseControllerTest, SendTrajectoryAction) {
   EXPECT_TRUE(feedback.error.accelerations.empty());
 
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 
-  SpinOnce(loop_rate);
+  this->SpinOnce(loop_rate);
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL);
 
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 }
 
-/// Is it possible to properly generate or follow the order even if the command value exceeds the PI or higher in the rotation direction
-TEST_F(OmniBaseControllerTest, OverPISteerTrajectory) {
-  SetupController();
+/// Check if it can appropriately generate and follow the trajectory even when a command value exceeding PI in the rotational direction is input
+TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -377,35 +397,35 @@ TEST_F(OmniBaseControllerTest, OverPISteerTrajectory) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 300; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
-  auto base_state = state_counter_->last_msg();
+  auto base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_GT(base_state.actual.positions[2], 2.9);
 
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_LT(base_state.actual.positions[2], -2.9);
 
   for (int i = 0; i < 120; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[2], -2.5, kEpsilon);
 }
 
-/// Can you stop properly when you can't follow the test track entered via a topic?
-TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
-  SetupController();
-  auto publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+/// Check if it stops correctly when unable to follow the test trajectory input through the topic
+TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
+  this->SetupController();
+  auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
   auto trajectory = GetTestTrajectory();
@@ -415,9 +435,9 @@ TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   double max_error = 0.0;
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
 
-    auto base_state = state_counter_->last_msg();
+    auto base_state = this->state_counter_->last_msg();
     if (base_state.error.positions.size() == 3) {
       max_error = std::max(max_error, std::abs(base_state.error.positions[0]));
     }
@@ -425,7 +445,7 @@ TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
   EXPECT_GT(max_error, 0.5);
 
   // Appropriate threshold to check that it was stopped without much progress
-  auto base_state = state_counter_->last_msg();
+  auto base_state = this->state_counter_->last_msg();
   EXPECT_LT(base_state.actual.positions[0], 0.2);
 
   ASSERT_EQ(base_state.actual.velocities.size(), 3);
@@ -434,12 +454,12 @@ TEST_F(OmniBaseControllerTest, StopFollowingInTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
 }
 
-/// Can you stop properly when you can't follow the test trajectory entered via an action
-TEST_F(OmniBaseControllerTest, StopFollowingInAction) {
-  SetupController();
+/// Check if it stops correctly when unable to follow the test trajectory input through action
+TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -457,22 +477,22 @@ TEST_F(OmniBaseControllerTest, StopFollowingInAction) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE(this-> template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
 
-  SpinOnce(loop_rate);
+  this->SpinOnce(loop_rate);
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED);
 }
 
-/// Can I correctly return the failure when the accuracy is not enough for the goal of the test orbit entered via the action
-TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
-  SetupController();
+/// Check if it can correctly return a failure result when the accuracy is insufficient for the goal of the test trajectory input through action
+TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -489,22 +509,23 @@ TEST_F(OmniBaseControllerTest, OverGoalTolerance) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 200; ++i) {
-  SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED, false));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED, false));
 
-  SpinOnce(loop_rate);
+  this->SpinOnce(loop_rate);
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED);
 }
 
-/// Action cancellation test
-TEST_F(OmniBaseControllerTest, ActionCancel) {
-  SetupController();
+/// Test of action cancellation
+TYPED_TEST(OmniBaseControllerTest, ActionCancel) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -513,24 +534,24 @@ TEST_F(OmniBaseControllerTest, ActionCancel) {
   auto future_goal_handle = action_client->async_send_goal(goal);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
-  WaitForReady(future_goal_handle, loop_rate);
+  this->WaitForReady(future_goal_handle, loop_rate);
 
   auto goal_handle = future_goal_handle.get();
   auto future_cancel = action_client->async_cancel_goal(goal_handle);
-  WaitForReady(future_cancel, loop_rate);
+  this->WaitForReady(future_cancel, loop_rate);
 
   auto cancel_response = future_cancel.get();
   EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
 
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-/// Continue Goal and send it for 2 times (the first is ClearactiveGoal)
-TEST_F(OmniBaseControllerTest, SendGoalTwice) {
-  SetupController();
+/// Send Goal twice in succession (the first is canceled by ClearActiveGoal)
+TYPED_TEST(OmniBaseControllerTest, SendGoalTwice) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -539,21 +560,23 @@ TEST_F(OmniBaseControllerTest, SendGoalTwice) {
   auto future_goal_handle_first = action_client->async_send_goal(goal);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
-  WaitForReady(future_goal_handle_first, loop_rate);
+  this->WaitForReady(future_goal_handle_first, loop_rate);
 
   auto future_goal_handle_second = action_client->async_send_goal(goal);
-  WaitForReady(future_goal_handle_second, loop_rate);
+  this->WaitForReady(future_goal_handle_second, loop_rate);
 
   auto goal_handle_first = future_goal_handle_first.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle_first, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle_first, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 
   auto goal_handle_second = future_goal_handle_second.get();
-  EXPECT_TRUE(WaitForStatus<ActionType>(goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-/// Will Configure fail when there is no bogie coordinate axis parameter?
-TEST_F(OmniBaseControllerTest, NoOdomCoordParameter) {
-  controller_ = std::make_shared<OmniBaseController>();
+/// Check if configure fails when cart coordinate axis parameters are missing
+TYPED_TEST(OmniBaseControllerTest, NoOdomCoordParameter) {
+  this->controller_ = std::make_shared<OmniBaseController>();
 
   rclcpp::NodeOptions options = rclcpp::NodeOptions()
       .allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true);
@@ -567,17 +590,18 @@ TEST_F(OmniBaseControllerTest, NoOdomCoordParameter) {
   options.append_parameter_override<float>("odom_t.p_gain", 0.01);
   options.append_parameter_override<float>("constraints.odom_x.trajectory", 0.5);
   options.append_parameter_override<float>("constraints.goal_time", 0.5);
+  options.append_parameter_override<bool>("use_base_roll_velocity", TypeParam::use_base_roll_velocity);
 
-  EXPECT_EQ(controller_->init(kControllerNodeName, "", options), controller_interface::return_type::OK);
-  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+  EXPECT_EQ(this->controller_->init(kControllerNodeName, "", options), controller_interface::return_type::OK);
+  EXPECT_EQ(this->controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
 }
 
-/// Send a GOAL that does not set orbit
-TEST_F(OmniBaseControllerTest, EmptyTrajectoryGoal) {
-  SetupController();
+/// Send a Goal without setting a trajectory
+TYPED_TEST(OmniBaseControllerTest, EmptyTrajectoryGoal) {
+  this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
   auto action_client = rclcpp_action::create_client<ActionType>(
-      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
   EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
@@ -585,44 +609,44 @@ TEST_F(OmniBaseControllerTest, EmptyTrajectoryGoal) {
   auto future_goal_handle = action_client->async_send_goal(goal);
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 10; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
   auto goal_handle = future_goal_handle.get();
   EXPECT_EQ(goal_handle, nullptr);
 }
 
-/// Whether the speed limit will be applied when the speed command exceeds the threshold
-TEST_F(OmniBaseControllerTest, VelocityLimit) {
-  SetupController();
-  auto publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
+/// Check if a speed limit is applied when speed command exceeds the threshold
+TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
+  this->SetupController();
+  auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
       std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
   auto internal_state_counter =
       std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
-          client_node_, std::string(kControllerNodeName) + "/internal_state");
+          this->client_node_, std::string(kControllerNodeName) + "/internal_state");
 
   for (int32_t i = 0; i < 4; i++) {
     geometry_msgs::msg::Twist command_velocity;
     switch (i) {
       case 0:
-        // Positive speed beyond the limit in the x direction
+        // Positive speed exceeding the limit in the x direction
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 0.0;
         break;
       case 1:
-        // Negative speed exceeding the limit in the Y direction
+        // Negative speed exceeding the limit in the y direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = -10.0;
         command_velocity.angular.z = 0.0;
         break;
       case 2:
-        // Speed ​​exceeding the limit in the YAW direction
+        // Speed exceeding the limit in the yaw direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
         break;
       case 3:
-        // Speed ​​exceeding the limit in the x, yaw direction (whether the limit is applied twice)
+        // Speeds exceeding the limit in the x and yaw directions (check if the limit is applied twice)
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
@@ -634,11 +658,11 @@ TEST_F(OmniBaseControllerTest, VelocityLimit) {
     rclcpp::WallRate loop_rate(kUpdateFrequency);
     for (int i = 0; i < 100; ++i) {
       publisher->publish(command_velocity);
-      SpinOnce(loop_rate);
+      this->SpinOnce(loop_rate);
 
       auto state = internal_state_counter->last_msg();
       if (state.desired.velocities.size() == 3) {
-        // Compare with a buffer of 1 / 10,000 in consideration of the decimal error.
+        // Consider decimal point error and compare with a buffer of one ten-thousandth
         ASSERT_LE(std::abs(state.desired.velocities[0]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[1]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[2]), kYawVelocityLimitThreshold * 1.0001);
@@ -647,11 +671,11 @@ TEST_F(OmniBaseControllerTest, VelocityLimit) {
   }
 }
 
-/// Testing of bogie control means
-TEST_F(OmniBaseControllerTest, ChangeControlMethod) {
-  SetupController();
-  // First, speed
-  auto vel_publisher = client_node_->create_publisher<geometry_msgs::msg::Twist>(
+/// Test of switching the cart's control methods
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
+  this->SetupController();
+  // First is speed
+  auto vel_publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
       std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
 
   geometry_msgs::msg::Twist command_velocity;
@@ -661,47 +685,47 @@ TEST_F(OmniBaseControllerTest, ChangeControlMethod) {
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 200; ++i) {
     vel_publisher->publish(command_velocity);
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
-  auto base_state = state_counter_->last_msg();
+  auto base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // Track from here
-  auto trj_publisher = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+  // From here, trajectory
+  auto trj_publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
   trj_publisher->publish(GetTestTrajectory());
 
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.1, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.1, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.3, kEpsilon);
 
   for (int i = 0; i < 100; ++i) {
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // Also speed
+  // Speed again
   for (int i = 0; i < 200; ++i) {
     vel_publisher->publish(command_velocity);
-    SpinOnce(loop_rate);
+    this->SpinOnce(loop_rate);
   }
 
-  base_state = state_counter_->last_msg();
+  base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[0], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);

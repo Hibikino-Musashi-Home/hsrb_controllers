@@ -5,9 +5,9 @@ find_package(ament_cmake REQUIRED)
 find_package(controller_interface REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
-find_package(hsrb_servomotor_protocol REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(realtime_tools REQUIRED)
+find_package(tmc_exxx_servo_motor_protocol REQUIRED)
 
 add_library(${PROJECT_NAME}
   SHARED
@@ -17,9 +17,9 @@ ament_target_dependencies(${PROJECT_NAME}
   controller_interface
   diagnostic_msgs
   hardware_interface
-  hsrb_servomotor_protocol
   pluginlib
   realtime_tools
+  tmc_exxx_servo_motor_protocol
 )
 
 pluginlib_export_plugin_description_file(controller_interface controller_plugins.xml)
@@ -43,8 +43,8 @@ ament_export_dependencies(
   controller_interface
   diagnostic_msgs
   hardware_interface
-  hsrb_servomotor_protocol
   realtime_tools
+  tmc_exxx_servo_motor_protocol
 )
 ament_export_libraries(
   ${PROJECT_NAME}

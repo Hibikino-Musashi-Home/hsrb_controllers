@@ -30,50 +30,51 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief HRH grip -in control action test
+/// @brief Test of Hrh grasp control action
 
 #include <gtest/gtest.h>
 
 #include <hsrb_gripper_controller/hrh_gripper_grasp_action.hpp>
-#include <hsrb_servomotor_protocol/exxx_common.hpp>
+#include <tmc_exxx_servo_motor_protocol/exxx_common.hpp>
 
 #include "utils.hpp"
 
 namespace hsrb_gripper_controller {
 
-class GraspActionTest
-    : public GripperActionTestBase<tmc_control_msgs::action::GripperApplyEffort, HrhGripperGraspAction> {
+class GraspActionTest : public GripperActionTestBase<tmc_control_msgs::action::GripperApplyEffort> {
  public:
   GraspActionTest() : GripperActionTestBase("grasp") {}
   virtual ~GraspActionTest() = default;
 };
 
 TEST_F(GraspActionTest, ActionSucceeded) {
+  StartupController();
+
   ActionType::Goal goal;
   goal.effort = 3.0;
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grasp start
   hardware_->effort->set_current(0.0);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // While holding in
+  // During grasp
   hardware_->grasping_flag->set_current(true);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // Completed in grip
+  // Grasp complete
   hardware_->effort->set_current(2.1);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
@@ -85,24 +86,26 @@ TEST_F(GraspActionTest, ActionSucceeded) {
 }
 
 TEST_F(GraspActionTest, ActionAborted) {
+  StartupController();
+
   ActionType::Goal goal;
   goal.effort = 3.0;
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grasp start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // While holding in
+  // During grasp
   hardware_->grasping_flag->set_current(true);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Completed in grip
+  // Grasp complete
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
@@ -111,49 +114,53 @@ TEST_F(GraspActionTest, ActionAborted) {
 }
 
 TEST_F(GraspActionTest, PreemptFromOutside) {
+  StartupController();
+
   ActionType::Goal goal;
   goal.effort = 3.0;
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grasp start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // External interrupt
-  action_server_->PreemptActiveGoal();
+  // External interruption
+  controller_->PreemptActiveGoal();
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // The condition does not change because there was an interrupt
+  // No state change due to interruption
   hardware_->grasping_flag->set_current(true);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 }
 
 TEST_F(GraspActionTest, CancelGoal) {
+  StartupController();
+
   ActionType::Goal goal;
   goal.effort = 3.0;
 
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grasp start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Cancel
+  // Throw cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -161,14 +168,15 @@ TEST_F(GraspActionTest, CancelGoal) {
   rclcpp::spin_until_future_complete(node_, future_cancel);
 
   auto cancel_response = future_cancel.get();
-  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED);
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 }
 
 TEST_F(GraspActionTest, GoalTorelance) {
-  node_->set_parameter({ rclcpp::Parameter("torque_goal_tolerance", 1.2) });
-  EXPECT_TRUE(action_server_->Init(node_));
+  rclcpp::NodeOptions node_options;
+  node_options.append_parameter_override<double>("torque_goal_tolerance", 1.2);
+  StartupController(node_options);
 
   ActionType::Goal goal;
   goal.effort = 3.0;
@@ -176,18 +184,18 @@ TEST_F(GraspActionTest, GoalTorelance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grasp start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // While holding in
+  // During grasp
   hardware_->grasping_flag->set_current(true);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Completed in grip
+  // Grasp complete
   hardware_->grasping_flag->set_current(false);
-  action_server_->Update(node_->now());
+  controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
@@ -196,7 +204,9 @@ TEST_F(GraspActionTest, GoalTorelance) {
 }
 
 TEST_F(GraspActionTest, TargetMode) {
-  EXPECT_EQ(action_server_->target_mode(), hsrb_servomotor_protocol::kDriveModeHandGrasp);
+  StartupController();
+  auto action_server = std::make_shared<HrhGripperGraspAction>(controller_.get());
+  EXPECT_EQ(action_server->target_mode(), tmc_exxx_servo_motor_protocol::kDriveModeHandGrasp);
 }
 
 }  // namespace hsrb_gripper_controller

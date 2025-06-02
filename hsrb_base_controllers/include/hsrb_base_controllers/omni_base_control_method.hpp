@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_control_method.hpp
-/// @brief Omnidistant bogie control mode class
+/// @brief Omnidirectional cart control mode class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROL_METHOD_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_CONTROL_METHOD_HPP_
 
@@ -46,14 +46,14 @@ DAMAGE.
 #include <geometry_msgs/msg/twist.hpp>
 #include <joint_trajectory_controller/trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <realtime_tools/realtime_buffer.h>
+#include <realtime_tools/realtime_buffer.hpp>
 
 #include <hsrb_base_controllers/omni_base_state.hpp>
 
 
 namespace hsrb_base_controllers {
 
-/// Bogie control means interface class
+/// Interface class for cart control means
 class IBaseControlMethod : private boost::noncopyable {
  public:
   using Ptr = std::shared_ptr<IBaseControlMethod>;
@@ -64,7 +64,7 @@ class IBaseControlMethod : private boost::noncopyable {
 };
 
 
-/// Bogie speed tracking
+/// Cart speed tracking
 class OmniBaseVelocityControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseVelocityControl>;
@@ -76,7 +76,7 @@ class OmniBaseVelocityControl : public IBaseControlMethod {
 
   // Get command speed
   Eigen::Vector3d GetOutputVelocity();
-  // Update the command speed
+  // Update command speed
   void UpdateCommandVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg);
 
  private:
@@ -84,16 +84,16 @@ class OmniBaseVelocityControl : public IBaseControlMethod {
 
   // Exclusive control
   std::mutex command_mutex_;
-  // Instruction speed
+  // Command speed
   Eigen::Vector3d command_velocity_;
-  // The last time I received the speed command value
+  // Time when the last speed command was received
   rclcpp::Time last_velocity_subscribed_time_;
-  // Speed ​​command value cut judgment time
+  // Speed command interruption judgment time
   double command_timeout_;
 };
 
 
-/// Trolley track follow -up
+/// Cart trajectory tracking
 class OmniBaseTrajectoryControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseTrajectoryControl>;
@@ -106,42 +106,43 @@ class OmniBaseTrajectoryControl : public IBaseControlMethod {
 
   // Get command speed
   Eigen::Vector3d GetOutputVelocity(const ControllerState& base_state);
-  // Update the track during follow -up, return True if there is a trajectory
+  // Update the trajectory being tracked, return true if a trajectory exists
   bool UpdateActiveTrajectory();
-  // Get the target status of track tracking
+  // Get target state for trajectory tracking
   bool SampleDesiredState(const rclcpp::Time& time,
                           const std::vector<double>& current_positions,
                           const std::vector<double>& current_velocities,
                           trajectory_msgs::msg::JointTrajectoryPoint& desired_state,
                           bool& before_last_point,
                           double& time_from_point);
-  // Verify the input orbit command
+  // Verify the input trajectory command
   bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) const;
-  // Update the track
+  // Update the tracking trajectory
   void AcceptTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
                         const Eigen::Vector3d& base_positions);
-  // If you meet the conditions, end the track follow -up
+  // Terminate trajectory tracking if conditions are met
   void TerminateControl(const rclcpp::Time& time, const ControllerState& base_state);
-  // Reset the trajectory currently following
+  // Reset the currently tracked trajectory
   void ResetCurrentTrajectory();
 
  private:
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
 
-  // Control feedback gain
+  // Feedback gain for control
   Eigen::Vector3d feedback_gain_;
-  // Bogie coordinate axis name
+  // Names of the cart's coordinate axes
   std::vector<std::string> coordinate_names_;
-  // Speed ​​threshold for judging the completion of track follow -up
+  // Speed threshold for determining trajectory tracking completion
   double stop_velocity_threshold_;
-  // Whether to connect from the existing desired when a new orbit comes
-  // Variables and behaviors are tailored to JointTrajectoryController
+  // Whether to connect from the existing desired when a new trajectory comes
+  // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
-  // Finally sampled state
+  // Last sampled state
+  rclcpp::Time last_sampled_time_;
   trajectory_msgs::msg::JointTrajectoryPoint last_command_state_;
-  // Last_command_state_ is a value
-  // It is correct to put the current price at the time of Activate, like JointtrajectoryController
-  // Since the change part is wider, it is implemented by flag management.
+  // Whether there is a value in last_command_state_
+  // It is correct to input the current value at activation like JointTrajectoryController
+  // Implement with flag management due to wide scope of changes
   bool has_last_command_state_;
 
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_ = nullptr;

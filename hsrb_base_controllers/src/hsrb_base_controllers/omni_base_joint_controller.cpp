@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_joint_controller.cpp
-/// @brief All -sided bogie joint controller class
+/// @brief Omnidirectional Cart Joint Controller Class
 #include <hsrb_base_controllers/omni_base_joint_controller.hpp>
 
 #include <string>
@@ -44,22 +44,24 @@ DAMAGE.
 
 namespace {
 
-// Turn shaft command speed limit [RAD/S]
+// Swivel axis command speed limit [rad/s]
 constexpr double kYawVelocityLimit = 1.8;
-// Wheel command speed limit [RAD/S]
+// Wheel command speed limit [rad/s]
 constexpr double kWheelVelocityLimit = 8.5;
 /// Encoder speed threshold
-/// Rarely, it was discovered that the encoder value would fly (about 4000rad/sec), so the threshold for playing it.
-/// The abnormal value is about 4000, so play the abnormal value by setting the default value of 1000.
+/// It has been discovered that the encoder value rarely jumps (about once every few hours, reaching around 4000 rad/sec), so this threshold is to filter them out
+/// Since abnormal values are around 4000, setting the default value to 1000 will filter them out
+/// TODO(kazuhito_tanaka): 本質対策がされたら本設定を削除
+// Swivel axis encoder speed threshold [rad/s]
 constexpr double kYawActualVelocityThreshold = 1000.0;
-// Wheel encoder speed threshold [RAD/S]
+// Wheel encoder speed threshold [rad/s]
 constexpr double kWheelActualVelocityThreshold = 1000.0;
-// Read the URDF robot model default name
+// Default name for the URDF robot model to read
 const char* const kDefaultRobotModelName = "robot_description";
-// The default name for the node that reads the URDF robot model
+// Default name of the node to load the URDF robot model
 const char* const kDefaultRobotModelNode = "robot_state_publisher";
 
-// Error if you can't get or obtain a joint name
+// Retrieve joint name, error if unable to retrieve
 bool GetJointName(
     const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
     const std::string& parameter_name, std::string& joint_name_out) {
@@ -72,10 +74,10 @@ bool GetJointName(
   }
 }
 
-// Read URDF
+// Load URDF
 std::string GetRobotDescription(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
-  // First, try reading from your node, try reading from Model_node_name.
-  // In the case of GAZEBO, I can't put Robot_description on Controller_manager, so I have to read it from another node.
+  // First, try loading from this node, if not possible, try loading from model_node_name
+  // In the case of gazebo, since robot_description cannot be placed in controller_manager, it must be loaded from another node
   const std::string model_name = hsrb_base_controllers::GetParameter(node, "model_name", kDefaultRobotModelName);
   const std::string robot_description_out = hsrb_base_controllers::GetParameter(node, model_name, "");
   if (!robot_description_out.empty()) {
@@ -85,8 +87,8 @@ std::string GetRobotDescription(const rclcpp_lifecycle::LifecycleNode::SharedPtr
   const std::string model_node_name = hsrb_base_controllers::GetParameter(
       node, "model_node_name", kDefaultRobotModelNode);
   const int32_t timeout = hsrb_base_controllers::GetParameter(node, "parameter_connection_timeout", 60);
-  // If you use the argument node, you will get an error when you get a parameter with get_ parameter.
-  // Temporarily generate a node object.
+  // Using the argument node results in an error when obtaining parameters with get_parameter,
+  // Temporarily create a node object.
   std::string node_name = std::string(node->get_name());
   auto omni_base_controller_node = rclcpp_lifecycle::LifecycleNode::make_shared(node_name);
   auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(omni_base_controller_node, model_node_name);
@@ -103,7 +105,7 @@ std::string GetRobotDescription(const rclcpp_lifecycle::LifecycleNode::SharedPtr
   return parameters_client->get_parameter(model_name, std::string());
 }
 
-// Initialize OmnibaseSize
+// Initialize OmniBaseSize
 bool InitializeOmniBaseSize(const rclcpp::Logger& logger,
                             const std::string& robot_description,
                             const std::vector<std::string>& joint_names,
@@ -133,15 +135,15 @@ bool InitializeOmniBaseSize(const rclcpp::Logger& logger,
 
 namespace hsrb_base_controllers {
 
-// Initialize constructors and parameters
-OmniBaseJointController::OmniBaseJointController(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
+// Constructor, initializing parameters
+OmniBaseJointControllerBase::OmniBaseJointControllerBase(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : node_(node),
       joint_command_(Eigen::Vector3d::Zero()),
       desired_steer_pos_(0.0) {
 }
 
 // Parameter initialization
-bool OmniBaseJointController::Init() {
+bool OmniBaseJointControllerBase::Init() {
   joint_names_.resize(kNumOmniBaseJointIDs);
   if (!GetJointName(node_, "joints.steer", joint_names_[kJointIDSteer]) ||
       !GetJointName(node_, "joints.l_wheel", joint_names_[kJointIDLeftWheel]) ||
@@ -156,7 +158,7 @@ bool OmniBaseJointController::Init() {
   velocity_limit_.yaw_limit = GetPositiveParameter(node_, "yaw_velocity_limit", kYawVelocityLimit);
   velocity_limit_.wheel_limit = GetPositiveParameter(node_, "wheel_velocity_limit", kWheelVelocityLimit);
 
-  /// Rarely, it was discovered that the encoder value would fly (about 4000rad/sec), so the threshold for playing it.
+  /// It has been discovered that the encoder value rarely jumps (about once every few hours, reaching around 4000 rad/sec), so this threshold is to filter them out
   /// TODO(kazuhito_tanaka): 本質対策がされたら本設定を削除
   actual_velocity_threshold_.yaw_limit = GetPositiveParameter(
       node_, "yaw_actual_velocity_threshold", kYawActualVelocityThreshold);
@@ -180,15 +182,7 @@ bool OmniBaseJointController::Init() {
   return true;
 }
 
-std::vector<std::string> OmniBaseJointController::command_interface_names() const {
-  std::vector<std::string> names;
-  names.push_back(joint_names_[kJointIDSteer] + '/' + hardware_interface::HW_IF_POSITION);
-  names.push_back(joint_names_[kJointIDRightWheel] + '/' + hardware_interface::HW_IF_VELOCITY);
-  names.push_back(joint_names_[kJointIDLeftWheel] + '/' + hardware_interface::HW_IF_VELOCITY);
-  return names;
-}
-
-std::vector<std::string> OmniBaseJointController::state_interface_names() const {
+std::vector<std::string> OmniBaseJointControllerBase::state_interface_names() const {
   std::vector<std::string> names;
   for (const auto& name : joint_names_) {
     names.push_back(name + '/' + hardware_interface::HW_IF_POSITION);
@@ -198,8 +192,8 @@ std::vector<std::string> OmniBaseJointController::state_interface_names() const 
 }
 
 /// Interface settings
-bool OmniBaseJointController::Activate(std::vector<hardware_interface::LoanedCommandInterface>& command_interfaces,
-                                       std::vector<hardware_interface::LoanedStateInterface>& state_interfaces) {
+bool OmniBaseJointControllerBase::Activate(std::vector<hardware_interface::LoanedCommandInterface>& command_interfaces,
+                                           std::vector<hardware_interface::LoanedStateInterface>& state_interfaces) {
   command_interfaces_.clear();
   current_position_interfaces_.clear();
   current_velocity_interfaces_.clear();
@@ -230,22 +224,22 @@ bool OmniBaseJointController::Activate(std::vector<hardware_interface::LoanedCom
   return true;
 }
 
-
-/// Get the axis position
-bool OmniBaseJointController::GetJointPositions(Eigen::Vector3d& positions_out) const {
+/// Obtain axis position
+bool OmniBaseJointControllerBase::GetJointPositions(Eigen::Vector3d& positions_out) const {
   positions_out(kJointIDRightWheel) = current_position_interfaces_[kJointIDRightWheel].get().get_value();
   positions_out(kJointIDLeftWheel) = current_position_interfaces_[kJointIDLeftWheel].get().get_value();
   positions_out(kJointIDSteer) = current_position_interfaces_[kJointIDSteer].get().get_value();
   return true;
 }
 
-/// Get the axial speed
-bool OmniBaseJointController::GetJointVelocities(Eigen::Vector3d& velocities_out) const {
+/// Obtain axis speed
+bool OmniBaseJointControllerBase::GetJointVelocities(Eigen::Vector3d& velocities_out) const {
   velocities_out(kJointIDRightWheel) = current_velocity_interfaces_[kJointIDRightWheel].get().get_value();
   velocities_out(kJointIDLeftWheel) = current_velocity_interfaces_[kJointIDLeftWheel].get().get_value();
   velocities_out(kJointIDSteer) = current_velocity_interfaces_[kJointIDSteer].get().get_value();
-  /// It was discovered that the encoder value would fly (once every few hours) (or about 4000rad/sec), so play it.
-  /// If the joint speed is above the threshold, Return
+  /// It has been discovered that the encoder value rarely jumps (about once every few hours, reaching around 4000 rad/sec), so this filter is applied
+  /// If joint speed is above the threshold, return
+  /// TODO(kazuhito_tanaka): 本質対策がされたら本設定を削除
   if ((fabs(velocities_out(kJointIDRightWheel)) > actual_velocity_threshold_.wheel_limit) ||
       (fabs(velocities_out(kJointIDLeftWheel)) > actual_velocity_threshold_.wheel_limit) ||
       (fabs(velocities_out(kJointIDSteer)) > actual_velocity_threshold_.yaw_limit)) {
@@ -259,13 +253,13 @@ bool OmniBaseJointController::GetJointVelocities(Eigen::Vector3d& velocities_out
   }
 }
 
-/// Calculate the command value
-void OmniBaseJointController::SetJointCommand(double period, const Eigen::Vector3d output_velocity) {
-  // Converts the command speed of the robot upper body coordinate system to a joint command speed
+/// Calculate command values
+void OmniBaseJointControllerBase::SetJointCommand(double period, const Eigen::Vector3d output_velocity) {
+  // Convert command speed in robot frame to joint command speed
   twin_drive_->Update(current_position_interfaces_[kJointIDSteer].get().get_value());
   joint_command_ = twin_drive_->ConvertInverse(output_velocity);
 
-  // Limit the turning axial speed
+  // Apply limit to swivel axis speed
   if (fabs(joint_command_(kJointIDSteer)) > velocity_limit_.yaw_limit) {
     double ratio = fabs(joint_command_(kJointIDSteer)) / velocity_limit_.yaw_limit;
     joint_command_(kJointIDSteer) /= ratio;
@@ -273,7 +267,7 @@ void OmniBaseJointController::SetJointCommand(double period, const Eigen::Vector
     joint_command_(kJointIDLeftWheel) /= ratio;
   }
 
-  // Limit the wheel speed
+  // Apply limit to wheel speed
   if (fabs(joint_command_(kJointIDRightWheel)) > velocity_limit_.wheel_limit ||
       fabs(joint_command_(kJointIDLeftWheel)) > velocity_limit_.wheel_limit) {
     const double ratio = std::max(fabs(joint_command_(kJointIDRightWheel)),
@@ -283,7 +277,7 @@ void OmniBaseJointController::SetJointCommand(double period, const Eigen::Vector
     joint_command_(kJointIDLeftWheel) /= ratio;
   }
 
-  // Filter the speed command value
+  // Apply filter to speed command values
   joint_command_(kJointIDRightWheel) =
       velocity_filters_[kJointIDRightWheel].update(joint_command_(kJointIDRightWheel));
   joint_command_(kJointIDLeftWheel) =
@@ -291,13 +285,42 @@ void OmniBaseJointController::SetJointCommand(double period, const Eigen::Vector
   joint_command_(kJointIDSteer) =
       velocity_filters_[kJointIDSteer].update(joint_command_(kJointIDSteer));
 
-  // Set the command speed of the wheels
-  command_interfaces_[kJointIDRightWheel].get().set_value(joint_command_(kJointIDRightWheel));
-  command_interfaces_[kJointIDLeftWheel].get().set_value(joint_command_(kJointIDLeftWheel));
+  // Set command values to the command interface
+  SetCommandToCommandInterface(period);
+}
 
-  // Update the command position of the turning axis and set
+
+std::vector<std::string> OmniBaseJointControllerBaseRollPosition::command_interface_names() const {
+  std::vector<std::string> names;
+  names.push_back(steer_joint_name() + '/' + hardware_interface::HW_IF_POSITION);
+  names.push_back(l_wheel_joint_name() + '/' + hardware_interface::HW_IF_VELOCITY);
+  names.push_back(r_wheel_joint_name() + '/' + hardware_interface::HW_IF_VELOCITY);
+  return names;
+}
+
+void OmniBaseJointControllerBaseRollPosition::SetCommandToCommandInterface(double period) {
+  // Update and set command position for swivel axis
   desired_steer_pos_ += joint_command_(kJointIDSteer) * period;
   command_interfaces_[kJointIDSteer].get().set_value(desired_steer_pos_);
+
+  // Set wheel command speed
+  command_interfaces_[kJointIDRightWheel].get().set_value(joint_command_(kJointIDRightWheel));
+  command_interfaces_[kJointIDLeftWheel].get().set_value(joint_command_(kJointIDLeftWheel));
+}
+
+
+std::vector<std::string> OmniBaseJointControllerBaseRollVelocity::command_interface_names() const {
+  std::vector<std::string> names;
+  names.push_back(steer_joint_name() + '/' + hardware_interface::HW_IF_VELOCITY);
+  names.push_back(l_wheel_joint_name() + '/' + hardware_interface::HW_IF_VELOCITY);
+  names.push_back(r_wheel_joint_name() + '/' + hardware_interface::HW_IF_VELOCITY);
+  return names;
+}
+
+void OmniBaseJointControllerBaseRollVelocity::SetCommandToCommandInterface(double period) {
+  command_interfaces_[kJointIDSteer].get().set_value(joint_command_(kJointIDSteer));
+  command_interfaces_[kJointIDRightWheel].get().set_value(joint_command_(kJointIDRightWheel));
+  command_interfaces_[kJointIDLeftWheel].get().set_value(joint_command_(kJointIDLeftWheel));
 }
 
 }  // namespace hsrb_base_controllers

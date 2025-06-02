@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2021 TOYOTA MOTOR CORPORATION
+Copyright (c) 2022 TOYOTA MOTOR CORPORATION
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Convenient function
+/// @brief Utility function
 #ifndef HSRB_BASE_CONTROLLERS_UTILS_HPP_
 #define HSRB_BASE_CONTROLLERS_UTILS_HPP_
 
@@ -40,7 +40,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-// Acquire parameters with default values
+// Get parameter with default value
 template <typename ParameterType>
 auto GetParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                   const std::string& name,
@@ -52,7 +52,7 @@ auto GetParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
   }
 }
 
-// In the case of non -correct, obtaining a parameter that uses the default value
+// Get parameter using default value when negative
 double GetPositiveParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name,
                             double default_value);
 

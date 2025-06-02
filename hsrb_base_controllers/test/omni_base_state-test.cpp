@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state-test.cpp
-/// @brief Test of the bogie state class of the omnidirectional bogie
+/// @brief Test for the omnidirectional cart state class
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ constexpr double kEpsilon = 1.0e-9;
 
 namespace hsrb_base_controllers {
 
-// Calculate error from Actual and desired
+// Calculate error from actual and desired
 TEST(ControllerStateTest, UpdateErrorNormal) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -69,7 +69,7 @@ TEST(ControllerStateTest, UpdateErrorNormal) {
   EXPECT_NEAR(state.error.accelerations[0], -4.2, kEpsilon);
 }
 
-// If the size of Actual and desired does not match, Error is empty
+// If the sizes of actual and desired do not match, error is empty
 TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -85,7 +85,7 @@ TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Initialization with desired
+// Initialization when desired is present
 TEST(ControllerBaseStateTest, InitWithDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3),
                             {-0.1, -0.2, -3.0}, {-1.1, -1.2, -1.3}, {-2.1, -2.2, -2.3});
@@ -130,7 +130,7 @@ TEST(ControllerBaseStateTest, InitWithDesired) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Initialization without desired
+// Initialization when desired is not present
 TEST(ControllerBaseStateTest, InitWithoutDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3));
 
@@ -169,7 +169,7 @@ TEST(ControllerBaseStateTest, InitWithoutDesired) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Check out the PI with UpdateERROR
+// Check handling of PI exceedance in UpdateError
 TEST(ControllerBaseStateTest, UpdateErrorOverPi) {
   ControllerBaseState state(Eigen::Vector3d(0.0, 0.0, 1.0), Eigen::Vector3d::Zero(), {0.0, 0.0, 2.0}, {}, {});
 
@@ -235,7 +235,7 @@ TEST(ControllerJointStateTest, Initialize) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Conversion to JointTrajectoryControllerstate
+// Conversion to JointTrajectoryControllerState
 TEST(ConvertTest, JointTrajectoryControllerState) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -316,7 +316,7 @@ TEST(ConvertTest, JointTrajectoryPoint) {
   EXPECT_NEAR(msg.accelerations[0], 2.1, kEpsilon);
 }
 
-// Published correctly by statepublisher
+// Correctly published by StatePublisher
 TEST(StatePublisherTest, Publish) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();

@@ -31,13 +31,13 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_input_odometry.cpp
-/// @brief Odometri class of all -sided bogies
+/// @brief Omnidirectional cart odometry class
 
 #include <hsrb_base_controllers/omni_base_input_odometry.hpp>
 
 namespace hsrb_base_controllers {
 
-/// Odometry entered from the outside
+/// Odometry input from external sources
 InputOdometry::InputOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   odometry_subscriber_ = node->create_subscription<nav_msgs::msg::Odometry>(
       "odom", 1, std::bind(&InputOdometry::OdometryCallback, this, std::placeholders::_1));

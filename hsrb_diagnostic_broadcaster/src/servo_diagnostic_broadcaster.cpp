@@ -41,19 +41,24 @@ DAMAGE.
 
 namespace {
 
-const std::vector<std::pair<std::string, std::string>> kInterfaceAndDiagnosticKeys = {
-    {"connection_error_rate", "Connection Error Rate"},
-    {hardware_interface::HW_IF_POSITION, "Present Position"},
-    {hardware_interface::HW_IF_VELOCITY, "Present Velocity"},
-    {hardware_interface::HW_IF_EFFORT, "Present Effort"},
-    {"temperature", "Present Temperature"},
-    {"current", "Present Current"},
-    {"current_drive_mode", "Driver Type"}
-};
+const char* const kConnectionErrorRate = "connection_error_rate";
+const char* const kTemperature = "temperature";
+const char* const kCurrent = "current";
+const char* const kCurrentDriveMode = "current_drive_mode";
 const char* const kMotorId = "motor_id";
 const char* const kWarningStatus = "warning_status";
 const char* const kErrorStatus = "error_status";
 const char* const kSafetyAlarmStatus = "safety_alarm_status";
+
+const std::vector<std::pair<std::string, std::string>> kInterfaceAndDiagnosticKeys = {
+    {kConnectionErrorRate, "Connection Error Rate"},
+    {hardware_interface::HW_IF_POSITION, "Present Position"},
+    {hardware_interface::HW_IF_VELOCITY, "Present Velocity"},
+    {hardware_interface::HW_IF_EFFORT, "Present Effort"},
+    {kTemperature, "Present Temperature"},
+    {kCurrent, "Present Current"},
+    {kCurrentDriveMode, "Driver Type"}
+};
 constexpr double kConnectionErrorRateTolerance = 0.3;
 
 bool IsInterfaceIncluded(const std::string& joint_name, const std::string& interface_name,
@@ -78,7 +83,7 @@ void UpdateKeyValue(const std::map<std::string, double>& key_value_map,
 }
 
 double ExtractConnectionErrorRate(const std::map<std::string, double>& key_value_map) {
-  const auto it = key_value_map.find("connection_error_rate");
+  const auto it = key_value_map.find(kConnectionErrorRate);
   if (it != key_value_map.end()) {
     return it->second;
   } else {
@@ -108,11 +113,32 @@ controller_interface::InterfaceConfiguration ServoDiagnosticBroadcaster::command
 }
 
 controller_interface::InterfaceConfiguration ServoDiagnosticBroadcaster::state_interface_configuration() const {
-  return controller_interface::InterfaceConfiguration{controller_interface::interface_configuration_type::ALL};
+  if (joints_.empty()) {
+    return controller_interface::InterfaceConfiguration{controller_interface::interface_configuration_type::ALL};
+  } else {
+    controller_interface::InterfaceConfiguration config;
+    config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+    for (const auto& name : joints_) {
+      config.names.push_back(name + "/" + kConnectionErrorRate);
+      config.names.push_back(name + "/" + hardware_interface::HW_IF_POSITION);
+      config.names.push_back(name + "/" + hardware_interface::HW_IF_VELOCITY);
+      config.names.push_back(name + "/" + hardware_interface::HW_IF_EFFORT);
+      config.names.push_back(name + "/" + kTemperature);
+      config.names.push_back(name + "/" + kCurrent);
+      config.names.push_back(name + "/" + kCurrentDriveMode);
+      config.names.push_back(name + "/" + kMotorId);
+      config.names.push_back(name + "/" + kWarningStatus);
+      config.names.push_back(name + "/" + kErrorStatus);
+      config.names.push_back(name + "/" + kSafetyAlarmStatus);
+    }
+    return config;
+  }
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 ServoDiagnosticBroadcaster::on_init() {
+  auto_declare<std::vector<std::string>>("joints", {});
+  joints_ = get_node()->get_parameter("joints").as_string_array();
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
@@ -168,11 +194,11 @@ ServoDiagnosticBroadcaster::on_activate(const rclcpp_lifecycle::State& previous_
     }
 
     warning_status_[joint_name] = std::make_shared<AlarmStatus>(
-        hsrb_servomotor_protocol::ExxxWarningCategory(), diagnostic_msgs::msg::DiagnosticStatus::WARN);
+        tmc_exxx_servo_motor_protocol::ExxxWarningCategory(), diagnostic_msgs::msg::DiagnosticStatus::WARN);
     error_status_[joint_name] = std::make_shared<AlarmStatus>(
-        hsrb_servomotor_protocol::ExxxErrorCategory(), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
+        tmc_exxx_servo_motor_protocol::ExxxErrorCategory(), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
     safety_alarm_status_[joint_name] = std::make_shared<AlarmStatus>(
-        hsrb_servomotor_protocol::ExxxSafetyErrorCategory(), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
+        tmc_exxx_servo_motor_protocol::ExxxSafetyErrorCategory(), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
   }
 
   next_publish_time_ = get_node()->now();

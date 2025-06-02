@@ -30,10 +30,11 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Handle that mocks hardware for testing
+/// @brief Handle that simulates hardware for testing
 #include <memory>
 #include <string>
 #include <vector>
+
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <hardware_interface/loaned_state_interface.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
@@ -99,6 +100,7 @@ struct HardwareStub {
   Handle::Ptr position;
   Handle::Ptr velocity;
   Handle::Ptr effort;
+  Handle::Ptr current;
 
   Handle::Ptr drive_mode;
   BoolHandle::Ptr grasping_flag;
@@ -110,10 +112,12 @@ struct HardwareStub {
     position = std::make_shared<Handle>(joint_name, hardware_interface::HW_IF_POSITION);
     velocity = std::make_shared<Handle>(joint_name, hardware_interface::HW_IF_VELOCITY);
     effort = std::make_shared<Handle>(joint_name, hardware_interface::HW_IF_EFFORT);
+    current = std::make_shared<Handle>(joint_name, "current");
 
     drive_mode = std::make_shared<Handle>(joint_name, "current_drive_mode", "command_drive_mode");
     grasping_flag = std::make_shared<BoolHandle>(joint_name, "current_grasping_flag", "command_grasping_flag");
 
+    // TODO(Takeshita) パラメータにする
     spring_l_position = std::make_shared<Handle>("hand_l_spring_proximal_joint", hardware_interface::HW_IF_POSITION);
     spring_r_position = std::make_shared<Handle>("hand_r_spring_proximal_joint", hardware_interface::HW_IF_POSITION);
 
@@ -125,6 +129,7 @@ struct HardwareStub {
     state_interfaces.emplace_back(position->GetStateInterface());
     state_interfaces.emplace_back(velocity->GetStateInterface());
     state_interfaces.emplace_back(effort->GetStateInterface());
+    state_interfaces.emplace_back(current->GetStateInterface());
     state_interfaces.emplace_back(drive_mode->GetStateInterface());
     state_interfaces.emplace_back(grasping_flag->GetStateInterface());
     state_interfaces.emplace_back(spring_l_position->GetStateInterface());

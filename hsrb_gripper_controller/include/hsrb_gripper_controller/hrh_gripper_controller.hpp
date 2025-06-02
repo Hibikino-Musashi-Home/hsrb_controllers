@@ -36,7 +36,7 @@ DAMAGE.
 #include <string>
 #include <vector>
 
-#include <realtime_tools/realtime_buffer.h>
+#include <realtime_tools/realtime_buffer.hpp>
 
 #include <controller_interface/controller_interface.hpp>
 
@@ -45,7 +45,7 @@ namespace hsrb_gripper_controller {
 class IHrhGripperAction;
 
 /// @class HrhGripperController
-/// @brief High-Ratio-Hypoid Grippa Controller
+/// @brief High-Ratio-Hypoid gripper controller
 class HrhGripperController : public controller_interface::ControllerInterface {
  public:
   using Ptr = std::shared_ptr<HrhGripperController>;
@@ -70,18 +70,18 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
       const rclcpp_lifecycle::State& previous_state) override;
 
-  /// Return if you can accept the command
+  /// Returns whether commands can be accepted
   bool IsAcceptable();
 
-  /// Insert an active goal
+  /// Interrupt the active goal
   void PreemptActiveGoal();
 
-  /// Access to the interface
+  /// Access to interface
   double GetCurrentPosition() const;
   double GetCurrentVelocity() const;
   double GetCurrentTorque() const;
   bool GetCurrentGraspingFlag() const;
-
+  double GetCurrent() const;
   double GetLeftSpringPosition() const;
   double GetRightSpringPosition() const;
 
@@ -91,25 +91,30 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   std::string joint_name() const { return joint_name_; }
 
   /// Change control mode
-  /// @param[in] Mode control mode
+  /// @param[in] mode Control mode
   void ChangeControlMode(std::shared_ptr<IHrhGripperAction> action);
 
+  /// Returns whether it matches the active control mode
+  /// @param[in] mode Control mode
+  bool IsActiveControlMode(std::shared_ptr<IHrhGripperAction> action) const { return action == active_action_; }
+
  protected:
-  // ControllerInterface :: Initialization and testing for parts other than INIT
+  // Initialization of parts other than ControllerInterface::init, separation for testing
   bool InitImpl();
 
  private:
   /// Control mode command buffer
   realtime_tools::RealtimeBuffer<int32_t> command_control_mode_;
 
-  /// Control target joint name
+  /// Target joint name
   std::string joint_name_;
 
-  /// Left and right finger joint names
+  /// Name of left and right finger joints
   std::string left_spring_joint_;
   std::string right_spring_joint_;
 
-  /// Interface index
+  /// TODO(Takeshita) indexでなくポインタをもたせる？
+  /// Index of interface
   uint32_t current_position_index_;
   uint32_t current_velocity_index_;
   uint32_t current_effort_index_;
@@ -120,11 +125,12 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   uint32_t command_effort_index_;
   uint32_t command_grasping_flag_index_;
   uint32_t command_drive_mode_index_;
+  uint32_t current_index_;
 
   /// All actions
   std::vector<std::shared_ptr<IHrhGripperAction> > actions_;
 
-  /// Running action
+  /// Executing action
   std::shared_ptr<IHrhGripperAction> active_action_;
 };
 

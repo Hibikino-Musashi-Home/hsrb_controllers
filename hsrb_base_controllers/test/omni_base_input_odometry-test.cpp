@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_input_odometry-test.cpp
-/// @brief External input Odometri class test
+/// @brief Test of the external input odometry class
 
 #include <gtest/gtest.h>
 
@@ -41,7 +41,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Initialize the odmetry
+/// Initialize odometry
 TEST(OmniBaseInputOdometryTest, InitOdometry) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();
@@ -61,7 +61,7 @@ TEST(OmniBaseInputOdometryTest, InitOdometry) {
   EXPECT_EQ(output.pose.pose.orientation.w, 1.0);
 }
 
-/// Get the current odmetry
+/// Get current odometry
 TEST(OmniBaseInputOdometryTest, GetOdometry) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();

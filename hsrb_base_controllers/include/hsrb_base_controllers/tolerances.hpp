@@ -27,7 +27,7 @@
 
 /// \author Adolfo Rodriguez Tsouroukdissian
 
-// For Humble, move Tolerance.hpp of Foxy Joint_trajectory_controller
+// For humble support, move tolerance.hpp of the foxy's joint_trajectory_controller
 // https://github.com/ros-controls/ros2_controllers/blob/master/joint_trajectory_controller/include/joint_trajectory_controller/tolerances.hpp
 
 #ifndef HSRB_BASE_CONTROLLERS_TOLERANCES_HPP_

@@ -30,12 +30,14 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Util function, class for testing
+/// @brief Utility functions and classes for testing
 
+#include <fstream>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+#include <rclcpp/rclcpp.hpp>
 
 #include <lifecycle_msgs/msg/state.hpp>
 #include <lifecycle_msgs/msg/transition.hpp>
@@ -76,9 +78,9 @@ bool WaitForStatus(const std::shared_ptr<HrhGripperController>& controller,
   return true;
 }
 
-trajectory_msgs::msg::JointTrajectory MakeTrajectory() {
+trajectory_msgs::msg::JointTrajectory MakeTrajectory(double command_position = 1.0) {
   trajectory_msgs::msg::JointTrajectoryPoint point;
-  point.positions = { 1.0 };
+  point.positions = { command_position };
   point.time_from_start = rclcpp::Duration(0, 500000000);
 
   trajectory_msgs::msg::JointTrajectory trajectory;
@@ -87,12 +89,36 @@ trajectory_msgs::msg::JointTrajectory MakeTrajectory() {
   return trajectory;
 }
 
+trajectory_msgs::msg::JointTrajectory MakeDistanceTrajectory(double command_distance = 0.1) {
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = { command_distance };
+  point.time_from_start = rclcpp::Duration(0, 500000000);
+
+  trajectory_msgs::msg::JointTrajectory trajectory;
+  trajectory.joint_names = { kHandJointName };
+  trajectory.points = { point };
+  return trajectory;
+}
+
+std::string ReadRobotDescriptionFromFile() {
+  std::fstream xml_file("robot.xml", std::fstream::in);
+  std::string robot_description;
+  while (xml_file.good()) {
+    std::string line;
+    std::getline(xml_file, line);
+    robot_description += (line + "\n");
+  }
+  xml_file.close();
+  return robot_description;
+}
+
 
 class TestableHrhGripperController : public HrhGripperController {
  public:
   using Ptr = std::shared_ptr<TestableHrhGripperController>;
 
-  TestableHrhGripperController();
+  TestableHrhGripperController() : TestableHrhGripperController(rclcpp::NodeOptions()) {}
+  explicit TestableHrhGripperController(rclcpp::NodeOptions node_options);
   ~TestableHrhGripperController() = default;
 
   controller_interface::return_type init(const std::string& controller_name, const std::string& namespace_ = "",
@@ -101,8 +127,14 @@ class TestableHrhGripperController : public HrhGripperController {
   void SkipConfigure();
 };
 
-TestableHrhGripperController::TestableHrhGripperController() {
-  EXPECT_EQ(ControllerInterface::init(kControllerNodeName), controller_interface::return_type::OK);
+TestableHrhGripperController::TestableHrhGripperController(rclcpp::NodeOptions node_options) {
+  node_options.append_parameter_override<std::vector<std::string> >("joints", { kHandJointName });
+  node_options.append_parameter_override<std::string>("left_spring_joint", "hand_l_spring_proximal_joint");
+  node_options.append_parameter_override<std::string>("right_spring_joint", "hand_r_spring_proximal_joint");
+  node_options.append_parameter_override<bool>("do_output_position_control", true);
+  node_options.append_parameter_override<double>("position_control_current_min", -1.0);
+  EXPECT_EQ(ControllerInterface::init(kControllerNodeName, "", node_options),
+            controller_interface::return_type::OK);
 }
 
 controller_interface::return_type TestableHrhGripperController::init(const std::string& controller_name,
@@ -118,7 +150,7 @@ controller_interface::return_type TestableHrhGripperController::init(const std::
 void TestableHrhGripperController::SkipConfigure() {
 }
 
-template <typename RosActionType, typename ActionServerType>
+template <typename RosActionType>
 class GripperActionTestBase : public ::testing::Test {
  public:
   explicit GripperActionTestBase(const std::string& action_name) : action_name_(action_name) {}
@@ -127,36 +159,43 @@ class GripperActionTestBase : public ::testing::Test {
   void SetUp() override;
 
  protected:
+  void StartupController();
+  void StartupController(rclcpp::NodeOptions node_options);
+
   TestableHrhGripperController::Ptr controller_;
   std::shared_ptr<rclcpp_lifecycle::LifecycleNode> node_;
   HardwareStub::Ptr hardware_;
-
-  IHrhGripperAction::Ptr action_server_;
 
   using ActionType = RosActionType;
   std::string action_name_;
   typename rclcpp_action::Client<RosActionType>::SharedPtr action_client_;
 };
 
-template <typename RosActionType, typename ActionServerType>
-void GripperActionTestBase<RosActionType, ActionServerType>::SetUp() {
-  controller_ = std::make_shared<TestableHrhGripperController>();
+template <typename RosActionType>
+void GripperActionTestBase<RosActionType>::SetUp() {
+  hardware_ = std::make_shared<HardwareStub>(kHandJointName);
+}
+
+template <typename RosActionType>
+void GripperActionTestBase<RosActionType>::StartupController() {
+  StartupController(rclcpp::NodeOptions());
+}
+
+template <typename RosActionType>
+void GripperActionTestBase<RosActionType>::StartupController(rclcpp::NodeOptions node_options) {
+  node_options.append_parameter_override<std::string>("robot_description", ReadRobotDescriptionFromFile());
+  controller_ = std::make_shared<TestableHrhGripperController>(node_options);
   node_ = controller_->get_node();
 
-  node_->declare_parameter<std::vector<std::string> >("joints", { kHandJointName });
-  EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
+  ASSERT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
 
-  hardware_ = std::make_shared<HardwareStub>(kHandJointName);
   controller_->assign_interfaces(std::move(hardware_->command_interfaces), std::move(hardware_->state_interfaces));
-  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-  EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
-
-  action_server_ = std::make_shared<ActionServerType>(controller_.get());
-  EXPECT_TRUE(action_server_->Init(node_));
+  ASSERT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
   action_client_ =
       rclcpp_action::create_client<RosActionType>(node_, std::string(kControllerNodeName) + "/" + action_name_);
-  EXPECT_TRUE(action_client_->wait_for_action_server());
+  ASSERT_TRUE(action_client_->wait_for_action_server());
 }
 
 }  // namespace hsrb_gripper_controller

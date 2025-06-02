@@ -40,31 +40,31 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperGraspAction
-/// @brief HRH grip -in control action class
+/// @brief Hrh Grasp Control Action Class
 class HrhGripperGraspAction : public HrhGripperAction<tmc_control_msgs::action::GripperApplyEffort> {
  public:
-  /// constructor
-  /// @param [IN] Controller parent controller
+  /// Constructor
+  /// @param [in] controller Parent Controller
   explicit HrhGripperGraspAction(HrhGripperController* controller);
   virtual ~HrhGripperGraspAction() = default;
 
   void Update(const rclcpp::Time& time) override;
 
  protected:
-  /// Implementation of initialization of action
+  /// Implementation of Action Initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Update action goals
+  /// Update Action Target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) override;
 
-  /// Directive value and state
+  /// Command Values and State
   std::mutex mutex_;
   double command_torque_;
   bool is_sent_start_grasping_;
 
-  /// Action success or failure judgment
+  /// Action Success Judgment
   void CheckForSuccess();
 
-  /// Goldork's tolerance error [NM]
+  /// Allowable Error of Goal Torque [Nm]
   double goal_tolerance_;
 };
 

@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_odometry-test.cpp
-/// @brief Odorigone Odometri -class test
+/// @brief Test class for omnidirectional cart odometry
 
 #include <gtest/gtest.h>
 
@@ -82,33 +82,33 @@ void BaseOdometryTest::SetUp() {
   }
 }
 
-/// Update the odometry with an external odmetry
+/// Update odometry using external odometry
 TEST_F(BaseOdometryTest, UpdateBaseOdometry) {
-  // Bogie Odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 10.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 20.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Bogie speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseTheta), 3.0);
 }
 
-/// Initialize the odometri data
+/// Initialize odometry data
 TEST_F(BaseOdometryTest, InitOdometry) {
   odom_->InitOdometry();
   odom_->UpdateOdometry(0.0, Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 2.0, 3.0));
 
-  // Bogie Odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Bogie speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
@@ -141,22 +141,22 @@ void WheelOdometryTest::SetUp() {
   odom_->UpdateOdometry(0.1, Eigen::Vector3d(1.0, 2.0, 3.0), Eigen::Vector3d(-1.0, -2.0, -3.0));
 }
 
-/// Updating and acquiring an odometri
+/// Odometry can be updated and retrieved
 TEST_F(WheelOdometryTest, UpdateWheelOdometry) {
-  // Bogie Odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_NEAR(odom(kIndexBaseX), 0.00573091, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseY), -0.00239658, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseTheta), 0.0150376, kEpsilon);
 
-  // Bogie speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_NEAR(vel(kIndexBaseX), 0.0570652, kEpsilon);
   EXPECT_NEAR(vel(kIndexBaseY), -0.024843, kEpsilon);
   EXPECT_NEAR(vel(kIndexBaseTheta), 3.15038, kEpsilon);
 }
 
-/// Publing anodometry
+/// Publish odometry
 TEST_F(WheelOdometryTest, PublishWheelOdometry) {
   auto client_node = rclcpp::Node::make_shared("client_node");
   auto counter = std::make_shared<SubscriptionCounter<nav_msgs::msg::Odometry>>(client_node, "test_node/wheel_odom");
@@ -183,7 +183,7 @@ TEST_F(WheelOdometryTest, PublishWheelOdometry) {
   EXPECT_NEAR(msg.twist.twist.angular.z, 3.15038, kEpsilon);
 }
 
-/// Issuing Odome TF
+/// Publish odometry tf
 TEST_F(WheelOdometryTest, PublishWheelTfOdometry) {
   auto client_node = rclcpp::Node::make_shared("client_node");
   auto counter = std::make_shared<SubscriptionCounter<tf2_msgs::msg::TFMessage>>(client_node, "/tf");

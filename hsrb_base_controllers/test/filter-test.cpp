@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file filter-test.cpp
-/// @brief Filter class test
+/// @brief Test of the filter class
 
 #include <vector>
 #include <gtest/gtest.h>
@@ -44,7 +44,7 @@ const double kEpsilon = 1.0e-5;
 namespace hsrb_base_controllers {
 
 TEST(FilterTest, Default) {
-  // The default is initialized in a = [1.0], b = [1.0]
+  // Initialized with defaults: a=[1.0], b=[1.0]
   Filter<> filter;
   // Nothing is filtered
   EXPECT_EQ(1.0, filter.update(1.0));
@@ -53,13 +53,13 @@ TEST(FilterTest, Default) {
 }
 
 TEST(FilterTest, Normal) {
-  // The default is initialized with {1.0, 0.1, 0.9}, b = {0.2, 0.8}.
+  // Initialized with defaults: {1.0, 0.1, 0.9}, b={0.2, 0.8}
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // The internal state is initialized at 0
+  // Internal state is initialized to 0
   // y = 1.0*0.2 + 0.0*0.8 - 0.0*0.1 - 0.0*0.9
   EXPECT_NEAR(0.2, filter.update(1.0), kEpsilon);
   // y = 2.0*0.2 + 1.0*0.8 - 0.2*0.1 - 0.0*0.9
@@ -71,13 +71,13 @@ TEST(FilterTest, Normal) {
 }
 
 TEST(FilterTest, Reset) {
-  // The default is initialized with {1.0, 0.1, 0.9}, b = {0.2, 0.8}.
+  // Initialized with defaults: {1.0, 0.1, 0.9}, b={0.2, 0.8}
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // Initialization of the internal state with 1.0 (the input and output are equilibrium with 1.0)
+  // Internal state initialized to 1.0 (balanced state between input and output at 1.0)
   filter.reset(1.0);
   // y = 1.0*0.2 + 1.0*0.8 - 1.0*0.1 - 1.0*0.9
   EXPECT_NEAR(0.0, filter.update(1.0), kEpsilon);

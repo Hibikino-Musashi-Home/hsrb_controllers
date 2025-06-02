@@ -43,55 +43,55 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperApplyForceCalculator
-/// @brief HRH Grippers Finger Tip Power Calculation Class
+/// @brief Hrh gripper fingertip force calculation class
 class HrhGripperApplyForceCalculator {
  public:
   using Ptr = std::shared_ptr<HrhGripperApplyForceCalculator>;
-  /// constructor
+  /// Constructor
   HrhGripperApplyForceCalculator();
-  /// constructor
-  /// @param [IN] Path calibration file path
+  /// Constructor
+  /// @param [in] path Calibration file path
   HrhGripperApplyForceCalculator(const std::string& calibration_file_path, const rclcpp::Logger& logger);
 
   virtual ~HrhGripperApplyForceCalculator() = default;
 
-  /// The left and right fingers are integrated and calculated
-  // @return Currently finger tip [n]
+  /// Calculate by integrating left and right fingertip forces
+  // @return Current fingertip force [N]
   double GetCurrentForce(double hand_motor_pos, double left_spring_proximal_joint_pos,
                          double right_spring_proximal_joint_pos) const;
 
  private:
-  /// Read of calibration data for force control
+  /// Load calibration data for force control
   void LoadForceCalibrationData(const std::string& path, const rclcpp::Logger& logger);
 
-  /// Calculate the current value of finger strength in light of internal force
-  /// @return Currently finger tip [n]
+  /// Calculate the current value of the fingertip force using internal force
+  /// @return Current fingertip force [N]
   double CalculateForce(double hand_motor_pos, double spring_proximal_joint_pos,
                         const std::vector<std::vector<double> >& calib_data) const;
 
-  /// Calculate the internal force of the grippers from the calibi data
-  /// @return Internal force [n]
+  /// Calculate the gripper's internal force from calibration data
+  /// @return Internal force [N]
   double CalculateInternalForce(double hand_motor_pos, const std::vector<double>& calib_p0,
                                 const std::vector<double>& calib_p1) const;
 
-  /// Fingering calibration data [N]
+  /// Fingertip force calibration data [N]
   std::vector<std::vector<double>> hand_left_force_calib_data_;
   std::vector<std::vector<double>> hand_right_force_calib_data_;
 
-  /// Spring constant of finger root joint [NM/RAD]
+  /// Spring constant of the finger base joint [Nm/rad]
   double hand_spring_coeff_;
 
-  /// Finger length [M]
+  /// Finger length [m]
   double arm_length_;
 };
 
 
 /// @class HrhGripperApplyForceAction
-/// @brief HRH Grippers Control Action Class
+/// @brief Hrh gripper force control action class
 class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::action::GripperApplyEffort> {
  public:
-  /// constructor
-  /// @param [IN] Controller parent controller
+  /// Constructor
+  /// @param [in] controller Parent controller
   explicit HrhGripperApplyForceAction(HrhGripperController* controller);
   virtual ~HrhGripperApplyForceAction() = default;
 
@@ -100,51 +100,51 @@ class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::act
   void PreemptActiveGoal() override;
 
  private:
-  /// Implementation of initialization of action
+  /// Implementation of action initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Update action goals
+  /// Update action target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) override;
 
-  /// Tolerance error of goal power [N]
+  /// Allowable error for target force [N]
   double goal_tolerance_;
-  /// Speed ​​threshold to be determined [RAD/S]
+  /// Speed threshold for stall detection [rad/s]
   double stall_velocity_threshold_;
-  /// Time to determine Stall [S]
+  /// Time for stall detection [s]
   double stall_timeout_;
 
-  /// PID gain for power control
+  /// Force control PID gain
   double force_control_pgain_;
   double force_control_igain_;
   double force_control_dgain_;
 
-  /// I controlled incorrect integration restriction value
+  /// Limit value for integrated error accumulation in I control
   double force_ierr_max_;
-  /// I controlled incorrect integration value buffer
+  /// Buffer for integrated error accumulation in I control
   double force_ierr_buff_;
 
-  /// Low -pass filter coefficient of finger tips
+  /// Low-pass filter coefficient for fingertip force
   double force_lpf_coeff_;
-  /// Low -pass filter buffer with fingertips [n]
+  /// Low-pass filter buffer for fingertip force [N]
   double force_lpf_buff_;
 
-  /// Refers
+  /// Fingertip force calculator
   HrhGripperApplyForceCalculator::Ptr force_calculator_;
 
-  /// Directive value buffer
+  /// Command value buffer
   realtime_tools::RealtimeBuffer<double> command_buffer_;
   /// Action continuation flag buffer
   realtime_tools::RealtimeBuffer<bool> stop_flag_buffer_;
 
-  /// Calculate the target position from the error between the finger tissue and the present value
-  /// @return Target location
+  /// Calculate the target position from the error between the commanded and current fingertip force
+  /// @return Target position
   double GetCommandPos();
-  /// Current finger tip force through the low -pass filter [N]
+  /// Current fingertip force after low-pass filtering [N]
   double current_force_lpf_;
 
-  /// Action success or failure judgment
-  /// @param [in] time now
+  /// Action success/failure judgment
+  /// @param [in] time Current time
   void CheckForSuccess(const rclcpp::Time& time);
-  /// The last time
+  /// Last operation time
   rclcpp::Time last_movement_time_;
 };
 

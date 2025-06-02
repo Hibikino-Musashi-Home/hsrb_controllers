@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_joint_controller.hpp
-/// @brief All -sided bogie joint controller class
+/// @brief Omni-directional Cart Joint Controller Class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 
@@ -51,40 +51,38 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Limit of turning axle speed and wheel speed
+/// Rotation Axis Speed and Wheel Speed Limits
 struct VelocityLimit {
-  // Turning axis speed limit [RAD/S]
+  // Rotation Axis Speed Limit [rad/s]
   double yaw_limit;
-  // Wheel speed limit [RAD/S]
+  // Wheel Speed Limit [rad/s]
   double wheel_limit;
 };
 
-/// Joint controller class
-class OmniBaseJointController {
+/// Joint Controller Class
+class OmniBaseJointControllerBase {
  public:
-  using Ptr = std::shared_ptr<OmniBaseJointController>;
+  using Ptr = std::shared_ptr<OmniBaseJointControllerBase>;
 
-  explicit OmniBaseJointController(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
-  ~OmniBaseJointController() = default;
+  explicit OmniBaseJointControllerBase(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
+  ~OmniBaseJointControllerBase() = default;
 
-  // Parameter initialization
+  // Parameter Initialization
   bool Init();
 
-  // Interface settings
-  std::vector<std::string> command_interface_names() const;
+  // Interface Setup
+  virtual std::vector<std::string> command_interface_names() const = 0;
   std::vector<std::string> state_interface_names() const;
   bool Activate(std::vector<hardware_interface::LoanedCommandInterface>& command_interfaces,
                 std::vector<hardware_interface::LoanedStateInterface>& state_interfaces);
-  // Calculate the command value
+  // Compute Command Values
   void SetJointCommand(double period, const Eigen::Vector3d output_velocity);
-  // Get the axis position
+  // Get Axis Position
   bool GetJointPositions(Eigen::Vector3d& positions_out) const;
-  // Get the axial speed
+  // Get Axis Speed
   bool GetJointVelocities(Eigen::Vector3d& velocities_out) const;
-  // Reset the target position of the turning axis
-  void ResetDesiredSteerPosition() {
-    desired_steer_pos_ = current_position_interfaces_[kJointIDSteer].get().get_value();
-  }
+  // Reset Target Position for Rotation Axis
+  virtual void ResetDesiredSteerPosition() = 0;
 
   // Accessor
   Eigen::Vector3d joint_command() const { return joint_command_; }
@@ -95,33 +93,72 @@ class OmniBaseJointController {
   std::vector<std::string> joint_names() const { return joint_names_; }
   double desired_steer_pos() const { return desired_steer_pos_; }
 
- private:
-  // Controller node handle
-  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
-  // Joint command value
-  Eigen::Vector3d joint_command_;
-  // Name of each axis
-  std::vector<std::string> joint_names_;
+ protected:
+  virtual void SetCommandToCommandInterface(double period) = 0;
 
-  // Handler of each axis of the bogie
+  // Joint Command Values
+  Eigen::Vector3d joint_command_;
+
+  // Handlers for Each Axis of the Cart
   template <typename T>
   using InterfaceReferences = std::vector<std::reference_wrapper<T>>;
   InterfaceReferences<hardware_interface::LoanedCommandInterface> command_interfaces_;
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_position_interfaces_;
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_velocity_interfaces_;
 
-  // Dimensions of bogie
-  OmniBaseSize omnibase_size_;
-  // Target position of the turning axis
+  // Target Position for the Rotation Axis
   double desired_steer_pos_;
-  // Bogie athletic model
+
+ private:
+  // Controller's Node Handle
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  // Names of Each Axis
+  std::vector<std::string> joint_names_;
+
+  // Dimensional Information of the Cart
+  OmniBaseSize omnibase_size_;
+  // Kinematic Model of the Cart
   TwinCasterDrive::Ptr twin_drive_;
-  // Command speed limit
+  // Command Speed Limit
   VelocityLimit velocity_limit_;
-  // Encoder value speed threshold
+  // Encoder Value Speed Threshold
   VelocityLimit actual_velocity_threshold_;
-  // Speed ​​filter
+  // Speed Filter
   std::vector<Filter<> > velocity_filters_;
+};
+
+// Controller Performing Position Command for the Rotation Axis
+class OmniBaseJointControllerBaseRollPosition : public OmniBaseJointControllerBase {
+ public:
+  explicit OmniBaseJointControllerBaseRollPosition(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
+      : OmniBaseJointControllerBase(node) {}
+  ~OmniBaseJointControllerBaseRollPosition() = default;
+
+  std::vector<std::string> command_interface_names() const override;
+
+  // Reset Target Position for Rotation Axis
+  void ResetDesiredSteerPosition() override {
+    desired_steer_pos_ = current_position_interfaces_[kJointIDSteer].get().get_value();
+  }
+
+ protected:
+  void SetCommandToCommandInterface(double period) override;
+};
+
+// Controller Performing Speed Command for the Rotation Axis
+class OmniBaseJointControllerBaseRollVelocity : public OmniBaseJointControllerBase {
+ public:
+  explicit OmniBaseJointControllerBaseRollVelocity(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
+      : OmniBaseJointControllerBase(node) {}
+  ~OmniBaseJointControllerBaseRollVelocity() = default;
+
+  std::vector<std::string> command_interface_names() const override;
+
+  // Reset Target Position for Rotation Axis
+  void ResetDesiredSteerPosition() override {}
+
+ protected:
+  void SetCommandToCommandInterface(double period) override;
 };
 
 }  // namespace hsrb_base_controllers

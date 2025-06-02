@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state.cpp
-/// @brief Bogie state class of all -sided plants
+/// @brief Class for the state of an omnidirectional cart
 #include <hsrb_base_controllers/omni_base_state.hpp>
 
 #include <string>
@@ -42,7 +42,7 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Bogie state public frequency [Hz]
+// Cart state publish frequency [Hz]
 const double kDefaultStatePublishRate = 50.0;
 
 void ConvertVector(const Eigen::VectorXd& input_vector,
@@ -91,7 +91,8 @@ ControllerBaseState::ControllerBaseState(const Eigen::Vector3d& actual_positions
                                          const std::vector<double>& desired_velocities,
                                          const std::vector<double>& desired_accelerations) {
   ConvertVector(actual_positions, actual.positions);
-  // Base_velocity_ is a base_footprint standard, so convert it to ODOM standard
+  // TODO(Takeshita) ここで変換しているのが微妙だなぁ
+  // Since base_velocity_ is based on base_footprint, convert it to the odom reference
   Eigen::Matrix3d rot_mat;
   rot_mat << cos(actual_positions[kIndexBaseTheta]), -sin(actual_positions[kIndexBaseTheta]), 0.0,
              sin(actual_positions[kIndexBaseTheta]), cos(actual_positions[kIndexBaseTheta]), 0.0,

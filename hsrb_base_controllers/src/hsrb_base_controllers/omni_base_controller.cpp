@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_controller.cpp
-/// @brief Omnidistant bogie controller class
+/// @brief Omnidirectional Cart Controller Class
 
 #include <hsrb_base_controllers/omni_base_controller.hpp>
 
@@ -43,7 +43,7 @@ DAMAGE.
 namespace hsrb_base_controllers {
 
 controller_interface::CallbackReturn OmniBaseController::on_init() {
-  // There is all processing in ON_CONFIGURE and ON_ACTIVATE that do nothing
+  // Does nothing special, all processing is in on_configure and on_activate
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -67,7 +67,7 @@ controller_interface::return_type OmniBaseController::update(
     return controller_interface::return_type::OK;
   }
 
-  // Acquire the position / speed of each axis of the bogie
+  // Get the position and speed of each axis of the cart
   Eigen::Vector3d joint_positions;
   Eigen::Vector3d joint_velocities;
   if (!joint_controller_->GetJointPositions(joint_positions) ||
@@ -76,16 +76,16 @@ controller_interface::return_type OmniBaseController::update(
   }
 
   const double period_sec = period.seconds();
-  // Update of odmetry
+  // Odometry update
   wheel_odometry_->UpdateOdometry(period_sec, joint_positions, joint_velocities);
   base_odometry_->UpdateOdometry(period_sec, wheel_odometry_->odometry(), wheel_odometry_->velocity());
 
-  // Update the truck following
+  // Update cart following status
   ControllerBaseState base_state(base_odometry_->odometry(), base_odometry_->velocity());
 
   Eigen::Vector3d output_velocity = Eigen::Vector3d::Zero();
   if (trajectory_control_->UpdateActiveTrajectory()) {
-    // Tracking
+    // Trajectory following
     trajectory_msgs::msg::JointTrajectoryPoint desired_state;
     bool before_last_point;
     double time_from_point;
@@ -107,12 +107,12 @@ controller_interface::return_type OmniBaseController::update(
       }
     }
   } else {
-    // Speed ​​tracking
+    // Speed following
     output_velocity = velocity_control_->GetOutputVelocity();
   }
   joint_controller_->SetJointCommand(period_sec, output_velocity);
 
-  // Publish the current state of the bogie (command value, current location, difference)
+  // Publish the current state of the cart (command value, current location, difference)
   const ControllerJointState joint_state(joint_positions,
                                          joint_velocities,
                                          joint_controller_->desired_steer_pos(),
@@ -120,7 +120,7 @@ controller_interface::return_type OmniBaseController::update(
   joint_state_publisher_->Publish(joint_state, current_time);
   base_state_publisher_->Publish(base_state, current_time);
 
-  // Wheel and dometry, publish TF
+  // Publish wheel odometry and TF
   wheel_odometry_->PublishOdometry(current_time);
 
   trajectory_control_->TerminateControl(current_time, base_state);
@@ -129,7 +129,7 @@ controller_interface::return_type OmniBaseController::update(
 }
 
 controller_interface::CallbackReturn OmniBaseController::on_configure(const rclcpp_lifecycle::State& previous_state) {
-  // Obtain the coordinates axis of the controlled bogie
+  // Get the coordinate axis name of the controlled cart
   const auto base_coordinate_names = GetParameter<std::vector<std::string>>(get_node(), "base_coordinates", {});
   if (base_coordinate_names.size() != kNumBaseCoordinateIDs) {
     RCLCPP_ERROR(get_node()->get_logger(), "The size of joints must be three.");
@@ -137,30 +137,35 @@ controller_interface::CallbackReturn OmniBaseController::on_configure(const rclc
   }
   default_tolerances_ = get_segment_tolerances(get_node(), base_coordinate_names);
 
-  // Set a speed subclan
+  // Set velocity subscriber
   velocity_subscriber_ = std::make_shared<CommandVelocitySubscriber>(get_node(), this);
-  // Set track subclan
+  // Set trajectory subscriber
   trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(get_node(), this);
-  // Action server standing up
+  // Start action server
   trajectory_action_ = std::make_shared<TrajectoryActionServer>(get_node(), base_coordinate_names, this);
 
-  // Joint controller class
-  joint_controller_ = std::make_shared<OmniBaseJointController>(get_node());
+  // Joint Controller Class
+  const auto command_base_roll_velocity = GetParameter<bool>(get_node(), "use_base_roll_velocity", false);
+  if (command_base_roll_velocity) {
+    joint_controller_ = std::make_shared<OmniBaseJointControllerBaseRollVelocity>(get_node());
+  } else {
+    joint_controller_ = std::make_shared<OmniBaseJointControllerBaseRollPosition>(get_node());
+  }
   if (!joint_controller_->Init()) {
     RCLCPP_ERROR(get_node()->get_logger(), "Initializing OmniBaseJointController is failed.");
     return controller_interface::CallbackReturn::ERROR;
   }
 
-  // Set a wheeldeodometry publisher
+  // Set publisher for wheel odometry
   wheel_odometry_ = std::make_shared<WheelOdometry>(get_node(), joint_controller_->omnibase_size());
-  // Set a bogie Odometri's publisher
+  // Set publisher for cart odometry
   base_odometry_ = std::make_shared<BaseOdometry>(get_node());
 
-  // Generate a controller
+  // Generate controller
   velocity_control_ = std::make_shared<OmniBaseVelocityControl>(get_node());
   trajectory_control_ = std::make_shared<OmniBaseTrajectoryControl>(get_node(), base_coordinate_names);
 
-  // Set a publisher in the internal joint
+  // Set publisher for internal joint states
   base_state_publisher_ = std::make_shared<StatePublisher>(
       get_node(), "~/state", base_coordinate_names);
   joint_state_publisher_ = std::make_shared<StatePublisher>(
@@ -173,7 +178,7 @@ controller_interface::CallbackReturn OmniBaseController::on_activate(const rclcp
   if (!joint_controller_->Activate(command_interfaces_, state_interfaces_)) {
     return controller_interface::CallbackReturn::ERROR;
   }
-  // ACTIVATE here according to JointTrajectoryController
+  // Align with JointTrajectoryController, activate here
   velocity_control_->Activate();
   trajectory_control_->Activate();
 
@@ -183,14 +188,14 @@ controller_interface::CallbackReturn OmniBaseController::on_activate(const rclcp
   joint_state_publisher_->set_last_state_published_time(current_time);
   base_state_publisher_->set_last_state_published_time(current_time);
 
-  // Initialize the odmetry at the time of launch
+  // Initialize odometry at startup
   base_odometry_->InitOdometry();
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::CallbackReturn OmniBaseController::on_deactivate(const rclcpp_lifecycle::State& previous_state) {
-  // Reset the current action goal when the controller is down
+  // Reset current action goal when shutting down the controller
   trajectory_action_->PreemptActiveGoal();
   // Clear command speed
   const auto zero_velocity = std::make_shared<geometry_msgs::msg::Twist>();
@@ -226,7 +231,7 @@ int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
   Convert(state.error, error);
 
   if (before_last_point) {
-    // Since the trajectory is being followed, just check if the route is out of order.
+    // Since following a trajectory, just check if the route is deviating
     for (uint32_t i = 0; i < active_tolerances_.state_tolerance.size(); ++i) {
       if (!check_state_tolerance_per_joint(error, i, active_tolerances_.state_tolerance[i])) {
         RCLCPP_ERROR(get_node()->get_logger(), "Path tolerance violated.");
@@ -234,7 +239,7 @@ int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
       }
     }
   } else {
-    // Check if you finished the goal, wait without doing anything within time
+    // Check if goal is reached, wait if within the time frame without doing anything
     bool abort = false;
     for (uint32_t i = 0; i < active_tolerances_.goal_state_tolerance.size(); ++i) {
       if (!check_state_tolerance_per_joint(error, i, active_tolerances_.goal_state_tolerance[i])) {
@@ -245,14 +250,14 @@ int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
     if (!abort) {
       return control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL;
     } else if (active_tolerances_.goal_time_tolerance != 0.0) {
-      // It is dangerous to say 0.0, but the default value is 0.0, so this is
+      // != with 0.0 is dangerous, but since the default value is 0.0, proceed with it
       if (time_from_trajectory_end > active_tolerances_.goal_time_tolerance) {
         RCLCPP_ERROR(get_node()->get_logger(), "Goal tolerance violated.");
         return control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED;
       }
     }
   }
-  // Since the defined error code is 0 or less, return the positive number to indicate nothing.
+  // Error codes defined are 0 or less, so return a positive number to indicate none
   return 1;
 }
 

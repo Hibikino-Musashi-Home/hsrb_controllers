@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state.hpp
-/// @brief Bogie state class of all -sided plants
+/// @brief Omnidirectional cart's state class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 
@@ -42,7 +42,7 @@ DAMAGE.
 #include <control_msgs/msg/joint_trajectory_controller_state.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
-#include <realtime_tools/realtime_publisher.h>
+#include <realtime_tools/realtime_publisher.hpp>
 
 #include <hsrb_base_controllers/twin_caster_drive.hpp>
 
@@ -114,7 +114,7 @@ class StatePublisher {
   std::unique_ptr<RealtimePublisher> publisher_;
   rclcpp::Publisher<control_msgs::msg::JointTrajectoryControllerState>::SharedPtr publisher_impl_;
 
-  // The last time I issued the state
+  // Last time the state was published
   rclcpp::Time last_state_published_time_;
 };
 

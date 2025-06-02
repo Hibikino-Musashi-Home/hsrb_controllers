@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file filter.hpp
-/// @brief (Speed ​​command) filter
+/// @brief Filter for speed command
 #ifndef HSRB_BASE_CONTROLLERS_FILTER_HPP_
 #define HSRB_BASE_CONTROLLERS_FILTER_HPP_
 
@@ -41,12 +41,12 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-// The specifications of MATLAB are the same as the following functions
+// Specification is made the same as the following Matlab function
 // https://jp.mathworks.com/help/matlab/ref/filter.html
 // Y(z)={b[1]+b[2]z^-1 +...+b[nb+1]z^−nb}/{1+a[2]z^−1+...+a[na-1]z^-na} * X(z)
 // y[n]=b[1]x[n]+b[2]x[n−1]+...+b[nb+1]x[n-nb]−a[2]y[n−1]−...−a[na-1]y[n-na]
-//  However, B [1] (Matlab)-> B [0] (C ++), a [1] (Matlab)-> a [0] (C ++), a [0] = 1.0
-// T is a type of input / output, V is an internal type (basic DOUBLE)
+// However, b[1](matlab)->b[0](c++), a[1](matlab)->a[0](c++), a[0] = 1.0
+// T is the type of input/output, V is the internal type (usually double)
 template<typename T = double, typename V = double>
 class Filter {
  public:
@@ -59,14 +59,14 @@ class Filter {
   }
   Filter(const std::vector<V>& a, const std::vector<V>& b)
       : a_(a), b_(b) {
-    // I do the parameter check on the basics
+    // Basic parameter checks are performed above
     assert(a_.size() > 0);
     assert(b_.size() > 0);
     reset(0.0);
   }
   virtual ~Filter() {}
 
-  // Reset a constant value of the internal state
+  // Reset internal state to a constant value
   void reset(const T& value) {
     x_.resize(b_.size());
     y_.resize(a_.size());
@@ -74,10 +74,10 @@ class Filter {
     std::fill(y_.begin(), y_.end(), static_cast<V>(value));
   }
 
-  // Filter
+  // Apply the filter
   T update(const T& x) {
     V y = 0.0;
-    // A [0] is not used
+    // a[0] is not used
     for (size_t i = a_.size() - 1; i > 0; --i) {
       y_[i] = y_[i - 1];
       y -= a_[i] * y_[i];

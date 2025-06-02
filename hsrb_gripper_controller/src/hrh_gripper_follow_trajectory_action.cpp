@@ -30,21 +30,27 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-#include "hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp"
 #include <limits>
-#include <hsrb_servomotor_protocol/exxx_common.hpp>
+
+#include <tmc_exxx_servo_motor_protocol/exxx_common.hpp>
+
+#include "hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp"
 #include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 
 namespace {
 
-// Default position goal tolerance error [RAD]
+// Default position goal tolerance [rad]
 const double kDefaultPositionGoalTolerance = 0.05;
-// Default goal reach accepted time [S]
+// Default goal reaching tolerance time [s]
 const double kDefaultPositionGoalTimeTolerance = 0.05;
+
+}  // unnamed namespace
+
+namespace hsrb_gripper_controller {
 
 bool ValidateTrajectory(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                         const trajectory_msgs::msg::JointTrajectory& trajectory, const std::string& joint_name) {
-  // Grippers are assumed 1 -axis
+  // Gripper is assumed to be single-axis
   if (trajectory.joint_names.size() != 1) {
     RCLCPP_ERROR(node->get_logger(), "Can't accept new action goals. joint_names' size is invalid.");
     return false;
@@ -86,23 +92,14 @@ bool ValidateTrajectory(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
   }
 }
 
-}  // unnamed namespace
-
-namespace hsrb_gripper_controller {
-
 HrhGripperFollowTrajectoryAction::HrhGripperFollowTrajectoryAction(HrhGripperController* controller)
-    : HrhGripperAction(controller, "~/follow_joint_trajectory", hsrb_servomotor_protocol::kDriveModeHandPosition),
+    : HrhGripperAction(controller, "~/follow_joint_trajectory", tmc_exxx_servo_motor_protocol::kDriveModeHandPosition),
       default_goal_tolerance_(kDefaultPositionGoalTolerance),
-      default_goal_time_tolerance_(kDefaultPositionGoalTimeTolerance) {}
-
-bool HrhGripperFollowTrajectoryAction::Activate() {
-  last_command_state_.positions = { controller_->GetCurrentPosition() };
-  last_command_state_.velocities = { controller_->GetCurrentVelocity() };
-  return true;
-}
+      default_goal_time_tolerance_(kDefaultPositionGoalTimeTolerance),
+      position_correction_value_(0.0) {}
 
 void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
-  // Check if there is orbit, update should only be called in orbit follow -up mode, so it may not be necessary.
+  // Check if there is a trajectory, might be unnecessary since Update should only be called in trajectory following mode
   auto current_msg = trajectory_ptr_->get_trajectory_msg();
   auto new_msg = trajectory_msg_buffer_.readFromRT();
   if (current_msg != *new_msg) {
@@ -113,10 +110,10 @@ void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
     return;
   }
 
-  // Target position sample
+  // Sample of target position
   if (!(*trajectory_active_ptr_)->is_sampled_already()) {
-    if (open_loop_control_) {
-      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(time, last_command_state_);
+    if (open_loop_control_ && last_command_state_.has_value()) {
+      (*trajectory_active_ptr_)->set_point_before_trajectory_msg(last_sampled_time_, last_command_state_.value());
     } else {
       trajectory_msgs::msg::JointTrajectoryPoint current_state;
       current_state.positions = { controller_->GetCurrentPosition() };
@@ -129,11 +126,26 @@ void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
   std::vector<trajectory_msgs::msg::JointTrajectoryPoint>::const_iterator end_segment_it;
   (*trajectory_active_ptr_)->sample(time, joint_trajectory_controller::interpolation_methods::DEFAULT_INTERPOLATION,
                                     desired_state, start_segment_it, end_segment_it);
+  last_sampled_time_ = time;
   last_command_state_ = desired_state;
 
+  // Response to overcurrent when closing and gripping something
+  if (current_min_ < 0.0) {
+    if (controller_->GetCurrent() < current_min_) {
+      position_correction_value_ += position_correction_incresing_step_;
+    } else if (position_correction_value_ > 0.0) {
+      position_correction_value_ -= position_correction_decresing_step_;
+    }
+  }
+  if (do_output_position_control_) {
+    const auto spring_joint_pos = (controller_->GetLeftSpringPosition() + controller_->GetRightSpringPosition()) / 2.0;
+    desired_state.positions[0] = { desired_state.positions[0] - spring_joint_pos + position_correction_value_ };
+  } else {
+    desired_state.positions[0] = { desired_state.positions[0] + position_correction_value_ };
+  }
   controller_->SetComandPosition(desired_state.positions[0]);
 
-  // Judgment and failure, check only GOAL TOLERANCE in the gripper
+  // Success judgment, check only goal tolerance with gripper
   const auto active_goal = *goal_handle_buffer_.readFromNonRT();
   if (!active_goal) {
     return;
@@ -144,7 +156,7 @@ void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
     return;
   }
 
-  if (std::abs(controller_->GetCurrentPosition() - goal_condition.position) < goal_condition.goal_tolerance) {
+  if (std::fabs(GetPosition() - goal_condition.position) <= goal_condition.goal_tolerance) {
     auto result = std::make_shared<control_msgs::action::FollowJointTrajectory::Result>();
     result->set__error_code(control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL);
     active_goal->setSucceeded(result);
@@ -160,14 +172,29 @@ void HrhGripperFollowTrajectoryAction::Update(const rclcpp::Time& time) {
 void HrhGripperFollowTrajectoryAction::PreemptActiveGoal() {
   HrhGripperAction::PreemptActiveGoal();
   trajectory_msg_buffer_.writeFromNonRT(std::make_shared<trajectory_msgs::msg::JointTrajectory>());
+  if (!controller_->IsActiveControlMode(shared_from_this())) {
+    last_command_state_.reset();
+  }
 }
 
-/// Implementation of initialization of action
+double HrhGripperFollowTrajectoryAction::GetPosition() const {
+  if (do_output_position_control_) {
+    const auto spring_joint_pos = (controller_->GetLeftSpringPosition() + controller_->GetRightSpringPosition()) / 2.0;
+    return controller_->GetCurrentPosition() + spring_joint_pos;
+  } else {
+    return controller_->GetCurrentPosition();
+  }
+}
+
+/// Implementation of action initialization
 bool HrhGripperFollowTrajectoryAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   default_goal_tolerance_ = GetPositiveParameter(node, "position_goal_tolerance", kDefaultPositionGoalTolerance);
   default_goal_time_tolerance_ =
       GetNonNegativeParameter(node, "position_goal_time_tolerance", kDefaultPositionGoalTimeTolerance);
   open_loop_control_ = GetParameter(node, "open_loop_control", false);
+
+  // Obtain flag for whether control is performed with output axis corrected for spring
+  do_output_position_control_ = GetParameter<bool>(node, "do_output_position_control", false);
 
   goal_condition_buffer_.initRT(GoalCondition());
 
@@ -178,17 +205,24 @@ bool HrhGripperFollowTrajectoryAction::InitImpl(const rclcpp_lifecycle::Lifecycl
   trajectory_command_sub_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
       "~/joint_trajectory", 1,
       std::bind(&HrhGripperFollowTrajectoryAction::TrajectoryCommandCallback, this, std::placeholders::_1));
+
+  // Obtain parameters for response to overcurrent when closing, set current_min to 0.0 by default to disable
+  // Default value for step is set to experimentally good value
+  current_min_ = GetParameter(node, "position_control_current_min", 0.0);
+  position_correction_incresing_step_ = GetParameter(node, "position_correction_incresing_step", 0.01);
+  position_correction_decresing_step_ = GetParameter(node, "position_correction_decresing_step", 0.001);
+
   return true;
 }
 
-/// Check if the goal is acceptable
+/// Check if goal is acceptable
 bool HrhGripperFollowTrajectoryAction::ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) {
   return ValidateTrajectory(node_, goal.trajectory, controller_->joint_name());
 }
 
-/// Update action goals
+/// Update target of action
 void HrhGripperFollowTrajectoryAction::UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) {
-  // PATH_TOLERANCE is not supported
+  // path_tolerance is not supported
   if (!goal.path_tolerance.empty()) {
     RCLCPP_WARN(node_->get_logger(), "path_tolerance is not supported. Ignoring the parameter...");
   }

@@ -238,9 +238,8 @@ std::string ExtractValue(const diagnostic_msgs::msg::DiagnosticArray& array,
 
 namespace hsrb_diagnostic_broadcaster {
 
-class ServoDiagnosticBroadcasterTest : public ::testing::Test {
+class ServoDiagnosticBroadcasterTestBase : public ::testing::Test {
  protected:
-  std::shared_ptr<rclcpp_lifecycle::LifecycleNode> controller_node_;
   std::shared_ptr<ServoDiagnosticBroadcaster> controller_;
 
   HardwareStub::Ptr hardware_;
@@ -248,37 +247,18 @@ class ServoDiagnosticBroadcasterTest : public ::testing::Test {
   rclcpp::Node::SharedPtr client_node_;
   DiagnosticsSubscriber::Ptr subscriber_;
 
-  void SetUp(double publish_rate = 10.0);
   void Spin();
   void WaitForDiagnostics();
 };
 
-void ServoDiagnosticBroadcasterTest::SetUp(double publish_rate) {
-  controller_ = std::make_shared<ServoDiagnosticBroadcaster>();
-  EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
-
-  controller_node_ = controller_->get_node();
-  controller_node_->declare_parameter("publish_rate", publish_rate);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  hardware_ = std::make_shared<HardwareStub>();
-  controller_->assign_interfaces({}, std::move(hardware_->state_interfaces()));
-
-  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-  EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
-
-  client_node_ = rclcpp::Node::make_shared(kClientNodeName);
-  subscriber_ = std::make_shared<DiagnosticsSubscriber>(client_node_);
-}
-
-void ServoDiagnosticBroadcasterTest::Spin() {
+void ServoDiagnosticBroadcasterTestBase::Spin() {
   controller_->update(controller_->get_node()->now(), rclcpp::Duration::from_seconds(0.1));
   rclcpp::spin_some(client_node_);
   ASSERT_EQ(controller_->update(controller_->get_node()->now(),
                                 rclcpp::Duration::from_seconds(0.1)), controller_interface::return_type::OK);
 }
 
-void ServoDiagnosticBroadcasterTest::WaitForDiagnostics() {
+void ServoDiagnosticBroadcasterTestBase::WaitForDiagnostics() {
   rclcpp::WallRate rate(100.0);
   auto timeout = client_node_->now() + rclcpp::Duration(3, 0);
   subscriber_->Reset();
@@ -291,6 +271,28 @@ void ServoDiagnosticBroadcasterTest::WaitForDiagnostics() {
   }
 }
 
+class ServoDiagnosticBroadcasterTest : public ServoDiagnosticBroadcasterTestBase {
+ protected:
+  void SetUp(const double publish_rate = 10.0);
+};
+
+void ServoDiagnosticBroadcasterTest::SetUp(const double publish_rate) {
+  ServoDiagnosticBroadcasterTestBase::SetUp();
+  controller_ = std::make_shared<ServoDiagnosticBroadcaster>();
+  EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
+
+  controller_->get_node()->declare_parameter("publish_rate", publish_rate);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  hardware_ = std::make_shared<HardwareStub>();
+  controller_->assign_interfaces({}, std::move(hardware_->state_interfaces()));
+
+  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+  client_node_ = rclcpp::Node::make_shared(kClientNodeName);
+  subscriber_ = std::make_shared<DiagnosticsSubscriber>(client_node_);
+}
 
 TEST_F(ServoDiagnosticBroadcasterTest, DiagnosticsStatus) {
   SetUp();
@@ -390,7 +392,7 @@ TEST_F(ServoDiagnosticBroadcasterTest, WarningStatus) {
 
   ASSERT_TRUE(HasJoint(msg, "valid_joint_1"));
   EXPECT_EQ(ExtractLevel(msg, "valid_joint_1"), diagnostic_msgs::msg::DiagnosticStatus::WARN);
-  // See hsrb_drivers/hsrb_servomotor_protocol/src/hsrb_servomotor_protocol/exxx_warning_category.cpp
+  // See hsrb_drivers/tmc_exxx_servo_motor_protocol/src/tmc_exxx_servo_motor_protocol/exxx_warning_category.cpp
   EXPECT_TRUE(IsMessageIncluded(msg, "valid_joint_1", "Velocity command interrupted."));
 
   hardware_->valid_joint_1->warning_status->set_value(4.0);
@@ -427,7 +429,7 @@ TEST_F(ServoDiagnosticBroadcasterTest, ErrorStatus) {
 
   ASSERT_TRUE(HasJoint(msg, "valid_joint_1"));
   EXPECT_EQ(ExtractLevel(msg, "valid_joint_1"), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
-  // See hsrb_drivers/hsrb_servomotor_protocol/src/hsrb_servomotor_protocol/exxx_error_category.cpp
+  // See hsrb_drivers/tmc_exxx_servo_motor_protocol/src/tmc_exxx_servo_motor_protocol/exxx_error_category.cpp
   EXPECT_TRUE(IsMessageIncluded(msg, "valid_joint_1", "Supplied voltage out of range."));
 
   hardware_->valid_joint_1->error_status->set_value(4.0);
@@ -464,7 +466,7 @@ TEST_F(ServoDiagnosticBroadcasterTest, SafetyAlarmStatus) {
 
   ASSERT_TRUE(HasJoint(msg, "valid_joint_1"));
   EXPECT_EQ(ExtractLevel(msg, "valid_joint_1"), diagnostic_msgs::msg::DiagnosticStatus::ERROR);
-  // See hsrb_drivers/hsrb_servomotor_protocol/src/hsrb_servomotor_protocol/exxx_error_category.cpp
+  // See hsrb_drivers/tmc_exxx_servo_motor_protocol/src/tmc_exxx_servo_motor_protocol/exxx_error_category.cpp
   EXPECT_TRUE(IsMessageIncluded(msg, "valid_joint_1", "Short error."));
 
   hardware_->valid_joint_1->safety_alarm_status->set_value(4.0);
@@ -618,6 +620,53 @@ TEST_F(ServoDiagnosticBroadcasterTest, ErrorStatusAndSafetyAlarmStatus) {
   EXPECT_TRUE(IsMessageIncluded(msg, "valid_joint_1", "Short error."));
 }
 
+class ServoDiagnosticBroadcasterJointTest : public ServoDiagnosticBroadcasterTestBase {
+ protected:
+  void SetUp(const double publish_rate = 10.0);
+};
+
+void ServoDiagnosticBroadcasterJointTest::SetUp(const double publish_rate) {
+  ServoDiagnosticBroadcasterTestBase::SetUp();
+  /* Setting of joints */
+  rclcpp::NodeOptions node_options;
+  node_options.parameter_overrides() = {
+      rclcpp::Parameter("joints", std::vector<std::string>({"valid_joint_1"}))};
+  controller_ = std::make_shared<ServoDiagnosticBroadcaster>();
+  EXPECT_EQ(controller_->init(kControllerNodeName, "", node_options), controller_interface::return_type::OK);
+
+  controller_->get_node()->declare_parameter("publish_rate", publish_rate);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  hardware_ = std::make_shared<HardwareStub>();
+  controller_->assign_interfaces({}, std::move(hardware_->state_interfaces()));
+
+  EXPECT_EQ(controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(controller_->get_node()->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+  client_node_ = rclcpp::Node::make_shared(kClientNodeName);
+  subscriber_ = std::make_shared<DiagnosticsSubscriber>(client_node_);
+}
+
+TEST_F(ServoDiagnosticBroadcasterJointTest, JointSet) {
+  SetUp();
+  auto config = controller_->state_interface_configuration();
+  EXPECT_EQ(controller_interface::interface_configuration_type::INDIVIDUAL, config.type);
+  EXPECT_EQ(config.names.size(), 11);
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(),
+            "valid_joint_1/connection_error_rate"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/position"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/velocity"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/effort"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/temperature"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/current"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(),
+            "valid_joint_1/current_drive_mode"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/motor_id"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/warning_status"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(), "valid_joint_1/error_status"), config.names.end());
+  EXPECT_NE(std::find(config.names.begin(), config.names.end(),
+            "valid_joint_1/safety_alarm_status"), config.names.end());
+}
 
 }  // namespace hsrb_diagnostic_broadcaster
 

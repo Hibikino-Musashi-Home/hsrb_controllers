@@ -33,6 +33,7 @@ DAMAGE.
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <boost/system/error_code.hpp>
@@ -41,8 +42,8 @@ DAMAGE.
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <realtime_tools/realtime_publisher.h>
 
-#include <hsrb_servomotor_protocol/exxx_error_category.hpp>
-#include <hsrb_servomotor_protocol/exxx_warning_category.hpp>
+#include <tmc_exxx_servo_motor_protocol/exxx_error_category.hpp>
+#include <tmc_exxx_servo_motor_protocol/exxx_warning_category.hpp>
 
 namespace hsrb_diagnostic_broadcaster {
 
@@ -70,6 +71,8 @@ class ServoDiagnosticBroadcaster : public controller_interface::ControllerInterf
   using RealtimePublisher = realtime_tools::RealtimePublisher<diagnostic_msgs::msg::DiagnosticArray>;
   std::unique_ptr<RealtimePublisher> realtime_publisher_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
+
+  std::vector<std::string> joints_;
 
   std::map<std::string, std::map<std::string, double>> joint_key_value_map_;
   std::map<std::string, std::string> joint_name_motor_id_map_;

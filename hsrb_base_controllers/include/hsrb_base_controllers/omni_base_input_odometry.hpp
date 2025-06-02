@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_input_odometry.hpp
-/// @brief Odometri class of all -sided bogies
+/// @brief Odometry class for omnidirectional vehicles
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 
@@ -40,7 +40,7 @@ DAMAGE.
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
-#include <realtime_tools/realtime_buffer.h>
+#include <realtime_tools/realtime_buffer.hpp>
 
 namespace hsrb_base_controllers {
 
@@ -52,9 +52,9 @@ class InputOdometry {
 
   explicit InputOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
 
-  // Initialize the odmetry
+  // Initialize odometry
   void InitOdometry();
-  // Get the current odmetry
+  // Get current odometry
   nav_msgs::msg::Odometry& GetOdometry() {
     return *odometry_buffer_.readFromRT();
   }
@@ -63,9 +63,9 @@ class InputOdometry {
   // Odometry callback
   void OdometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
 
-  // Odometry sub scrider
+  // Odometry subscriber
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscriber_;
-  // Odometry data used in real time
+  // Odometry data for real-time use
   RealtimeOdometryBuffer odometry_buffer_;
 };
 

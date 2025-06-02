@@ -1,0 +1,60 @@
+<?xml version="1.0" ?>
+<robot name="hsrb">
+  <link name="hand_palm_link" />
+
+  <joint name="hand_motor_joint" type="revolute">
+      <axis xyz="1.0 0.0 0.0" />
+      <limit effort="100.0" velocity="1.0" lower="-0.798" upper="1.24" />
+      <parent link="hand_palm_link" />
+      <child link="hand_motor_dummy_link" />
+  </joint>
+
+  <link name="hand_motor_dummy_link" />
+
+  <joint name="hand_l_proximal_joint" type="revolute">
+      <origin xyz="-0.01675 -0.0245 -0.0175" rpy="0.0 0.0 0.0" />
+      <axis xyz="1.0 0.0 0.0" />
+      <limit effort="100.0" velocity="1.0" lower="-0.798" upper="1.24" />
+      <parent link="hand_palm_link" />
+      <child link="hand_l_proximal_link" />
+  </joint>
+
+  <link name="hand_l_proximal_link" />
+
+  <joint name="hand_l_spring_proximal_joint" type="revolute">
+      <axis xyz="1.0 0.0 0.0" />
+      <limit effort="10.0" velocity="1.0" lower="0.0" upper="0.698" />
+      <parent link="hand_l_proximal_link" />
+      <child link="hand_l_spring_proximal_link" />
+  </joint>
+
+  <link name="hand_l_spring_proximal_link" />
+
+  <joint name="hand_l_mimic_distal_joint" type="revolute">
+    <origin xyz="0.0 0.0 0.07" />
+    <axis xyz="1.0 0.0 0.0" />
+    <limit effort="100.0" velocity="1.0" lower="-0.698" upper="0.0" />
+    <parent link="hand_l_spring_proximal_link" />
+    <child link="hand_l_mimic_distal_link" />
+  </joint>
+
+  <link name="hand_l_mimic_distal_link" />
+
+  <joint name="hand_l_distal_joint" type="revolute">
+      <axis xyz="1.0 0.0 0.0" />
+      <limit effort="100.0" velocity="1.0" lower="-1.24" upper="-0.798" />
+      <parent link="hand_l_mimic_distal_link" />
+      <child link="hand_l_distal_link" />
+      <mimic joint="hand_motor_joint" offset="-0.087" />
+  </joint>
+
+  <link name="hand_l_distal_link" />
+
+  <joint name="hand_l_finger_tip_frame_joint" type="fixed">
+      <origin xyz="0.01675 0.01865 0.04289" rpy="-1.57 0.0 0.0" />
+      <parent link="hand_l_distal_link" />
+      <child link="hand_l_finger_tip_frame" />
+  </joint>
+
+  <link name="hand_l_finger_tip_frame" />
+</robot>

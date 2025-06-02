@@ -33,14 +33,18 @@ DAMAGE.
 #include <string>
 #include <vector>
 #include <boost/range/adaptor/indexed.hpp>
-#include <hardware_interface/types/hardware_interface_type_values.hpp>
-#include <hsrb_gripper_controller/hrh_gripper_apply_force_action.hpp>
-#include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 #include <lifecycle_msgs/msg/state.hpp>
 #include <lifecycle_msgs/msg/transition.hpp>
+
+#include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_action.hpp>
+#include <hsrb_gripper_controller/hrh_gripper_apply_force_action.hpp>
+#include <hsrb_gripper_controller/hrh_gripper_follow_distance_trajectory_action.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_grasp_action.hpp>
+#include <hsrb_gripper_controller/hrh_gripper_set_distance_action.hpp>
+
+#include "hsrb_gripper_controller/hrh_gripper_controller.hpp"
 
 namespace {
 
@@ -122,6 +126,7 @@ controller_interface::InterfaceConfiguration HrhGripperController::state_interfa
   conf.names.push_back(joint_name_ + "/" + hardware_interface::HW_IF_EFFORT);
   conf.names.push_back(joint_name_ + "/current_drive_mode");
   conf.names.push_back(joint_name_ + "/current_grasping_flag");
+  conf.names.push_back(joint_name_ + "/current");
   conf.names.push_back(left_spring_joint_ + "/" + hardware_interface::HW_IF_POSITION);
   conf.names.push_back(right_spring_joint_ + "/" + hardware_interface::HW_IF_POSITION);
   return conf;
@@ -144,10 +149,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_configure(
     const rclcpp_lifecycle::State& previous_state) {
-  // Initialization of each action
+  // Initialize each action
   actions_.push_back(std::make_shared<HrhGripperFollowTrajectoryAction>(this));
   actions_.push_back(std::make_shared<HrhGripperGraspAction>(this));
   actions_.push_back(std::make_shared<HrhGripperApplyForceAction>(this));
+  actions_.push_back(std::make_shared<HrhGripperSetDistanceAction>(this));
+  actions_.push_back(std::make_shared<HrhGripperFollowDistanceTrajectoryAction>(this));
   for (auto& action : actions_) {
     if (!action->Init(get_node())) {
       return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
@@ -158,7 +165,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_activate(
     const rclcpp_lifecycle::State& previous_state) {
-  // Assign_interfaces => Activate is in the order, so it can be used already
+  // assign_interfaces => activate order, so it can be used now
   for (const auto& state_interface : state_interfaces_) {
     if (state_interface.get_interface_name() == "current_drive_mode") {
       command_control_mode_.initRT(static_cast<int32_t>(state_interface.get_value()));
@@ -170,6 +177,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
       !GetIndex(state_interfaces_, hardware_interface::HW_IF_VELOCITY, current_velocity_index_) ||
       !GetIndex(state_interfaces_, hardware_interface::HW_IF_EFFORT, current_effort_index_) ||
       !GetIndex(state_interfaces_, "current_grasping_flag", current_grasping_flag_index_) ||
+      !GetIndex(state_interfaces_, "current", current_index_) ||
       !GetPositionIndex(state_interfaces_, left_spring_joint_, current_left_spring_index_) ||
       !GetPositionIndex(state_interfaces_, right_spring_joint_, current_right_spring_index_) ||
       !GetIndex(command_interfaces_, hardware_interface::HW_IF_POSITION, command_position_index_) ||
@@ -222,6 +230,8 @@ double HrhGripperController::GetLeftSpringPosition() const {
 double HrhGripperController::GetRightSpringPosition() const {
   return state_interfaces_[current_right_spring_index_].get_value();
 }
+
+double HrhGripperController::GetCurrent() const { return state_interfaces_[current_index_].get_value(); }
 
 void HrhGripperController::SetComandPosition(double position) {
   command_interfaces_[command_position_index_].set_value(position);
