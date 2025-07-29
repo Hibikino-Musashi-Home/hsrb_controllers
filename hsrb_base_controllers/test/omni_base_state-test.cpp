@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state-test.cpp
-/// @brief Test for the omnidirectional cart state class
+/// @brief Test class for the omnidirectional cart state
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ constexpr double kEpsilon = 1.0e-9;
 
 namespace hsrb_base_controllers {
 
-// Calculate error from actual and desired
+// Calculate the error from actual and desired
 TEST(ControllerStateTest, UpdateErrorNormal) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -69,7 +69,7 @@ TEST(ControllerStateTest, UpdateErrorNormal) {
   EXPECT_NEAR(state.error.accelerations[0], -4.2, kEpsilon);
 }
 
-// If the sizes of actual and desired do not match, error is empty
+// If the sizes of actual and desired do not match, the error is empty
 TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -85,7 +85,7 @@ TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Initialization when desired is present
+// Initialization with desired
 TEST(ControllerBaseStateTest, InitWithDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3),
                             {-0.1, -0.2, -3.0}, {-1.1, -1.2, -1.3}, {-2.1, -2.2, -2.3});
@@ -130,7 +130,7 @@ TEST(ControllerBaseStateTest, InitWithDesired) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Initialization when desired is not present
+// Initialization without desired
 TEST(ControllerBaseStateTest, InitWithoutDesired) {
   ControllerBaseState state(Eigen::Vector3d(0.1, 0.2, M_PI / 2.0), Eigen::Vector3d(1.1, 1.2, 1.3));
 
@@ -169,7 +169,7 @@ TEST(ControllerBaseStateTest, InitWithoutDesired) {
   EXPECT_TRUE(state.error.accelerations.empty());
 }
 
-// Check handling of PI exceedance in UpdateError
+// Check handling of PI overflow in UpdateError
 TEST(ControllerBaseStateTest, UpdateErrorOverPi) {
   ControllerBaseState state(Eigen::Vector3d(0.0, 0.0, 1.0), Eigen::Vector3d::Zero(), {0.0, 0.0, 2.0}, {}, {});
 

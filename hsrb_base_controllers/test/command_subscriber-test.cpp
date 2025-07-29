@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file command_subscriber-test.cpp
-/// @brief Test class for input command control for omnidirectional cart control
+/// @brief Test class for omnidirectional cart control input command control
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -118,7 +118,7 @@ TEST_F(CommandVelocitySubscriberTest, SubscribeOnRunning) {
   EXPECT_EQ(received_command->linear.x, 1.0);
 }
 
-// Command reception is not possible, so do not pass the received speed command to the Controller
+// Command reception unavailable, so do not pass the received speed command to the Controller
 TEST_F(CommandVelocitySubscriberTest, SubscribeOnStopped) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -187,7 +187,7 @@ TEST_F(CommandTrajectorySubscriberTest, SubscribeOnRunning) {
   EXPECT_EQ(received_command->header.frame_id, "test");
 }
 
-// Command reception is not possible, so do not pass the received joint trajectory to the Controller
+// Command reception unavailable, so do not pass the received joint trajectory to the Controller
 TEST_F(CommandTrajectorySubscriberTest, SubscribeOnStopped) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -207,7 +207,7 @@ TEST_F(CommandTrajectorySubscriberTest, SubscribeOnStopped) {
   }
 }
 
-// Received joint trajectory is invalid, so do not pass to the Controller
+// The received joint trajectory is invalid, so do not pass it to the Controller
 TEST_F(CommandTrajectorySubscriberTest, SubscribeInvalidTrajectory) {
   bool is_called = false;
   EXPECT_CALL(*interface_mock_, IsAcceptable())
@@ -255,7 +255,7 @@ void TrajectoryActionServerTest::SetUp() {
   EXPECT_TRUE(client_->wait_for_action_server());
 }
 
-// Pass the received joint trajectory to the controller
+// Pass the received joint trajectory to the Controller
 TEST_F(TrajectoryActionServerTest, ReceiveGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
 
@@ -283,7 +283,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveGoal) {
   EXPECT_EQ(received_command->header.frame_id, "test");
 }
 
-// Cannot accept commands, so do not accept the goal
+// Command reception unavailable, so do not accept the goal
 TEST_F(TrajectoryActionServerTest, ReceiveGoalOnStopped) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(false));
 
@@ -294,7 +294,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveGoalOnStopped) {
   EXPECT_EQ(future_goal_handle.get().get(), nullptr);
 }
 
-// Joint trajectory is invalid, so do not accept the goal
+// The joint trajectory is invalid, so do not accept the goal
 TEST_F(TrajectoryActionServerTest, ReceiveInvalidGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(false));
@@ -307,7 +307,7 @@ TEST_F(TrajectoryActionServerTest, ReceiveInvalidGoal) {
   EXPECT_EQ(future_goal_handle.get().get(), nullptr);
 }
 
-// Action cancellation
+// Cancel the action
 TEST_F(TrajectoryActionServerTest, CancelGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -330,7 +330,7 @@ TEST_F(TrajectoryActionServerTest, CancelGoal) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-// UpdateResult while following trajectory, excessive error
+// UpdateResult while in trajectory following, excessive error
 TEST_F(TrajectoryActionServerTest, UpdateResultOutsidePathTorelance) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -362,7 +362,7 @@ TEST_F(TrajectoryActionServerTest, UpdateResultInsideGoalTorelance) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-// UpdateResult upon completion of trajectory following, cannot reach goal in time
+// UpdateResult upon completion of trajectory following, unable to reach goal in time
 TEST_F(TrajectoryActionServerTest, UpdateResultOutsideGoalTimeTorelance) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(1).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(1).WillRepeatedly(::testing::Return(true));
@@ -482,7 +482,7 @@ TEST_F(TrajectoryActionServerTest, PublishFeedback) {
   EXPECT_TRUE(feedback.error.accelerations.empty());
 }
 
-// New goal arrives after completion of trajectory following
+// New goal arrives after trajectory following completion
 TEST_F(TrajectoryActionServerTest, AcceptNewGoal) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(2).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(2).WillRepeatedly(::testing::Return(true));
@@ -505,7 +505,7 @@ TEST_F(TrajectoryActionServerTest, AcceptNewGoal) {
   EXPECT_TRUE(WaitForStatus<ActionType>(node_, goal_handle, action_msgs::msg::GoalStatus::STATUS_ACCEPTED));
 }
 
-// New goal arrives before completion of trajectory following
+// New goal arrives before trajectory following completion
 TEST_F(TrajectoryActionServerTest, AcceptNewGoalBeforeComplete) {
   EXPECT_CALL(*interface_mock_, IsAcceptable()).Times(2).WillRepeatedly(::testing::Return(true));
   EXPECT_CALL(*interface_mock_, ValidateTrajectory(::testing::_)).Times(2).WillRepeatedly(::testing::Return(true));

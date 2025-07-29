@@ -38,25 +38,25 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Default value for the cart speed command interruption detection time [s]
+// Default value of cart speed specification interruption detection time [s]
 constexpr double kDefaultCommandTimeout = 0.5;
-// Threshold for the magnitude of speed considered as stopped
+// Threshold for speed magnitude considered as stop
 constexpr double kStopVelocityThreshold = 0.001;
-// Time margin for determining route following stop [s]
+// Time margin [s] considered as path following stop
 constexpr double kStopTimeMergin = 0.2;
 // Control P gain for deviation in trajectory following
 constexpr double kDefaultPGain = 1.0;
 
-// Create an array to sort two name arrays listed in different orders
+// Create an array to sort the two name arrays which have different order
 std::vector<uint32_t> MakePermutationVector(
     const std::vector<std::string>& names1,
     const std::vector<std::string>& names2) {
-  // Exit if the size of the input array does not match
+  // Exit if the size of the input arrays do not match
   if (names1.size() != names2.size()) {
     return std::vector<uint32_t>();
   }
 
-  // Find matching names and create an array for sorting
+  // Search for matching names and create an array for sorting
   std::vector<uint32_t> permutation_vector(names1.size());
   for (std::vector<std::string>::const_iterator it1 = names1.begin(); it1 != names1.end(); ++it1) {
     std::vector<std::string>::const_iterator it2 = std::find(names2.begin(), names2.end(), *it1);
@@ -76,7 +76,7 @@ namespace hsrb_base_controllers {
 
 OmniBaseVelocityControl::OmniBaseVelocityControl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : node_(node) {
-  // Get the time for speed command value interruption detection
+  // Get speed command interruption detection time
   command_timeout_ = GetParameter(node, "command_timeout", kDefaultCommandTimeout);
   if (command_timeout_ <= 0.0) {
     RCLCPP_INFO(
@@ -84,7 +84,7 @@ OmniBaseVelocityControl::OmniBaseVelocityControl(const rclcpp_lifecycle::Lifecyc
       "command_timeout must be positive. Use default value [%lf]", kDefaultCommandTimeout);
     command_timeout_ = kDefaultCommandTimeout;
   }
-  // Call in the constructor and initialize just in case
+  // Also call in the constructor for initialization just in case
   Activate();
 }
 
@@ -95,7 +95,7 @@ void OmniBaseVelocityControl::Activate() {
   last_velocity_subscribed_time_ = node_->get_clock()->now();
 }
 
-// Obtain the command speed
+// Get commanded speed
 Eigen::Vector3d OmniBaseVelocityControl::GetOutputVelocity() {
   std::lock_guard<std::mutex> lock(command_mutex_);
 
@@ -106,7 +106,7 @@ Eigen::Vector3d OmniBaseVelocityControl::GetOutputVelocity() {
   return output_velocity;
 }
 
-// Update the command speed
+// Update commanded speed
 void OmniBaseVelocityControl::UpdateCommandVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) {
   std::lock_guard<std::mutex> lock(command_mutex_);
 
@@ -115,7 +115,7 @@ void OmniBaseVelocityControl::UpdateCommandVelocity(const geometry_msgs::msg::Tw
 }
 
 
-// Constructor, perform parameter initialization
+// Constructor, initialize parameters
 OmniBaseTrajectoryControl::OmniBaseTrajectoryControl(
     const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
     const std::vector<std::string>& cordinates) : node_(node), coordinate_names_(cordinates) {
@@ -134,15 +134,15 @@ void OmniBaseTrajectoryControl::Activate() {
   has_last_command_state_ = false;
 }
 
-// Obtain the command speed
+// Retrieve commanded speed
 Eigen::Vector3d OmniBaseTrajectoryControl::GetOutputVelocity(
     const ControllerState& base_state) {
-  // Add the term proportional to the positional difference to the command speed to make it the target speed
+  // Add a term proportional to position difference to commanded speed to set target speed
   const Eigen::Vector3d desired(base_state.desired.velocities.data());
   const Eigen::Vector3d error(base_state.error.positions.data());
   Eigen::Vector3d output_velocity = desired + feedback_gain_.cwiseProduct(error);
 
-  // Convert speed from the reference coordinate system to the upper body coordinate system
+  // Convert velocity from reference coordinate system to body coordinate system
   const double current_yaw = base_state.actual.positions.at(kIndexBaseTheta);
   Eigen::Matrix3d robot_to_floor;
   robot_to_floor <<
@@ -154,7 +154,7 @@ Eigen::Vector3d OmniBaseTrajectoryControl::GetOutputVelocity(
   return output_velocity;
 }
 
-  // Update the trajectory being followed, return true if a trajectory exists
+  // Update the following trajectory, return true if a trajectory exists
 bool OmniBaseTrajectoryControl::UpdateActiveTrajectory() {
   const auto current_msg = trajectory_ptr_->get_trajectory_msg();
   const auto new_msg = trajectory_msg_buffer_.readFromRT();
@@ -172,7 +172,7 @@ bool OmniBaseTrajectoryControl::UpdateActiveTrajectory() {
   }
 }
 
-// Obtain the target state for trajectory following
+// Get target state of trajectory following
 bool OmniBaseTrajectoryControl::SampleDesiredState(
     const rclcpp::Time& time,
     const std::vector<double>& current_positions,
@@ -208,7 +208,7 @@ bool OmniBaseTrajectoryControl::SampleDesiredState(
   return is_ok;
 }
 
-// Validate the input trajectory command
+// Validate input trajectory command
 bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) const {
   // Invalid if joint names do not match
   if (trajectory.joint_names.size() != coordinate_names_.size()) {
@@ -222,7 +222,7 @@ bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::J
     }
   }
 
-  // Check if each JointTrajectoryPoint is valid
+  // Check validity for each JointTrajectoryPoint
   double last_time = -std::numeric_limits<double>::max();
   for (const auto& point : trajectory.points) {
     // Invalid if the number of position elements does not match the number of joints
@@ -231,18 +231,18 @@ bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::J
       return false;
     }
     // Invalid if the number of velocity elements does not match the number of joints
-    // Allow if velocity is empty
+    // Allowed if velocity is empty
     if (!point.velocities.empty() && point.velocities.size() != coordinate_names_.size()) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's velocity size is wrong.");
       return false;
     }
     // Invalid if the number of acceleration elements does not match the number of joints
-    // Allow if acceleration is empty
+    // Allowed if acceleration is empty
     if (!point.accelerations.empty() && point.accelerations.size() != coordinate_names_.size()) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's acceleration size is wrong.");
       return false;
     }
-    // Invalid if time_from_start is retrogressive
+    // Invalid if time_from_start is regressive
     double time_from_start = static_cast<rclcpp::Duration>(point.time_from_start).seconds();
     if (time_from_start - last_time <= 0.0) {
       RCLCPP_ERROR(node_->get_logger(), "Trajectory's time_from_start is going reverse.");
@@ -253,7 +253,7 @@ bool OmniBaseTrajectoryControl::ValidateTrajectory(const trajectory_msgs::msg::J
   return true;
 }
 
-// Update the trajectory being followed
+// Update the following trajectory
 void OmniBaseTrajectoryControl::AcceptTrajectory(
     const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
     const Eigen::Vector3d& base_positions) {
@@ -263,11 +263,11 @@ void OmniBaseTrajectoryControl::AcceptTrajectory(
     return;
   }
 
-  // Create an array to sort the input msg
+  // Create a sorting array for the input message
   const std::vector<std::string> trajectory_joint_names = trajectory->joint_names;
   const std::vector<uint32_t> permutation_vector = MakePermutationVector(coordinate_names_, trajectory_joint_names);
 
-  // Create a trajectory considering the order of axis names
+  // Create trajectory considering the order of axis names
   trajectory_msgs::msg::JointTrajectory permutated_trajectory;
   permutated_trajectory.header = trajectory->header;
   permutated_trajectory.joint_names = trajectory->joint_names;
@@ -287,7 +287,7 @@ void OmniBaseTrajectoryControl::AcceptTrajectory(
     point.time_from_start = input_point.time_from_start;
     permutated_trajectory.points.push_back(point);
   }
-  // Correction of the turning axis
+  // Correction of rotational axis
   double prev_position;
   if (open_loop_control_ && has_last_command_state_) {
     prev_position = last_command_state_.positions[kIndexBaseTheta];
@@ -303,7 +303,7 @@ void OmniBaseTrajectoryControl::AcceptTrajectory(
   trajectory_msg_buffer_.writeFromNonRT(std::make_shared<trajectory_msgs::msg::JointTrajectory>(permutated_trajectory));
 }
 
-// End trajectory following if the conditions are met
+// Terminate trajectory following if conditions are met
 void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const ControllerState& base_state) {
   if (!trajectory_active_ptr_ || !(*trajectory_active_ptr_)->has_trajectory_msg()) {
     return;
@@ -314,7 +314,7 @@ void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const
 
   const double time_from_start = (time - (*trajectory_active_ptr_)->time_from_start()).seconds();
   const Eigen::Vector3d current_velocity(base_state.actual.velocities.data());
-  // End trajectory following if the planned follow time has passed and the current state is stationary
+  // Terminate trajectory following if it is past the planned following time and currently stationary
   const rclcpp::Duration command_trajectory_period = (--((*trajectory_active_ptr_)->end()))->time_from_start;
   if ((time_from_start > command_trajectory_period.seconds() + kStopTimeMergin) &&
       (current_velocity.norm() < stop_velocity_threshold_)) {
@@ -322,7 +322,7 @@ void OmniBaseTrajectoryControl::TerminateControl(const rclcpp::Time& time, const
   }
 }
 
-// Reset the trajectory currently being followed
+// Reset current following trajectory
 void OmniBaseTrajectoryControl::ResetCurrentTrajectory() {
   trajectory_msgs::msg::JointTrajectory empty_msg;
   empty_msg.header.stamp = rclcpp::Time(0);

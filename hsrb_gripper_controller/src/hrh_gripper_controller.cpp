@@ -134,11 +134,30 @@ controller_interface::InterfaceConfiguration HrhGripperController::state_interfa
 
 controller_interface::return_type HrhGripperController::update(const rclcpp::Time& time,
                                                                const rclcpp::Duration& period) {
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+
   if (active_action_) {
     active_action_->Update(get_node()->get_clock()->now());
+
+    // Acquire state data from running action
+    reference = active_action_->GetReferenceState();
+    feedback = active_action_->GetFeedbackState();
+  } else {
+    // If there is no running action, set state data to the current value
+    feedback.positions = { GetCurrentPosition() };
+    feedback.velocities = { GetCurrentVelocity() };
+    feedback.effort = { GetCurrentTorque() };
+    reference = feedback;
   }
   int32_t command_mode = *(command_control_mode_.readFromRT());
   command_interfaces_[command_drive_mode_index_].set_value(static_cast<double>(command_mode));
+
+  // Publish state
+  gripper_state_publisher_->Publish(reference, feedback, time);
+
+  // Publish fingertip distance
+  gripper_distance_publisher_->Publish(GetCurrentPosition(), time);
 
   return controller_interface::return_type::OK;
 }
@@ -160,12 +179,19 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
       return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
   }
+
+  // Set state publisher
+  gripper_state_publisher_ = std::make_shared<StatePublisher>(get_node(), "~/controller_state", joint_name_);
+
+  // Set fingertip distance publisher
+  gripper_distance_publisher_ = std::make_shared<DistancePublisher>(get_node(), "~/fingertip_distance");
+
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_activate(
     const rclcpp_lifecycle::State& previous_state) {
-  // assign_interfaces => activate order, so it can be used now
+  // assign_interfaces => activate order, so it's already usable
   for (const auto& state_interface : state_interfaces_) {
     if (state_interface.get_interface_name() == "current_drive_mode") {
       command_control_mode_.initRT(static_cast<int32_t>(state_interface.get_value()));
@@ -191,6 +217,10 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
       return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
   }
+
+  gripper_state_publisher_->SetLastStatePublishedTime(get_node()->get_clock()->now());
+  gripper_distance_publisher_->SetLastStatePublishedTime(get_node()->get_clock()->now());
+
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 

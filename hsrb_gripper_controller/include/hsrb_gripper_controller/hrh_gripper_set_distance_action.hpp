@@ -36,52 +36,16 @@ DAMAGE.
 #include <tmc_control_msgs/action/gripper_set_distance.hpp>
 
 #include "hsrb_gripper_controller/hrh_gripper_action.hpp"
+#include "hsrb_gripper_controller/hrh_gripper_distance.hpp"
 
 namespace hsrb_gripper_controller {
-
-/// @class HrhGripperSetDistanceCalculator
-/// @brief Hrh Gripper Fingertip Distance Calculation Class
-class HrhGripperSetDistanceCalculator {
- public:
-  using Ptr = std::shared_ptr<HrhGripperSetDistanceCalculator>;
-  /// Constructor
-  HrhGripperSetDistanceCalculator();
-
-  /// Destructor
-  virtual ~HrhGripperSetDistanceCalculator() = default;
-
-  /// Initialize the physical parameters of the hand
-  bool InitializeHandSizeData(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
-
-  /// Calculation of fingertip distance
-  /// @return Fingertip distance [m]
-  double GetDistanceFromPosition(double hand_motor_pos) const;
-
-  /// Calculation of fingertip distance
-  /// @return Fingertip distance [m]
-  double GetDistanceFromPosition(
-      double hand_motor_pos, double left_spring_proximal_joint_pos,
-      double right_spring_proximal_joint_pos) const;
-
-  /// Calculate joint angle from fingertip distance
-  /// @return Joint angle [rad]
-  double GetPositionFromDistance(double distance) const;
-
- private:
-  /// URDF retrieval
-  std::string GetRobotDescription(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
-
-  /// Finger length [m]
-  double proximal_to_distal_z_;
-  double distance_palm_to_tip_;
-};
 
 /// @class HrhGripperSetDistanceAction
 /// @brief Hrh Fingertip Distance Setting Action Class
 class HrhGripperSetDistanceAction : public HrhGripperAction<tmc_control_msgs::action::GripperSetDistance> {
  public:
   /// Constructor
-  /// @param [in] controller Parent controller
+  /// @param [in] controller Parent Controller
   explicit HrhGripperSetDistanceAction(HrhGripperController* controller);
   virtual ~HrhGripperSetDistanceAction() = default;
 
@@ -89,70 +53,76 @@ class HrhGripperSetDistanceAction : public HrhGripperAction<tmc_control_msgs::ac
 
   void PreemptActiveGoal() override;
 
+  trajectory_msgs::msg::JointTrajectoryPoint GetReferenceState() override;
+  trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() override;
+
  protected:
-  /// Implementation of action initialization
+  /// Implementation of Action Initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Update action target
+  /// Update the action target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperSetDistance::Goal& goal) override;
 
-  /// Calculate target position from error between command value and current opening width
-  /// @param [in] current_distance Current opening width
-  /// @return Target position
+  /// Calculate the target position from the error between the command value and current value of the width
+  /// @param [in] current_distance Current Width
+  /// @return Target Position
   double GetCommandPos(const double current_distance);
 
-  /// Success determination
-  /// @param [in] time             Current time
-  /// @param [in] current_distance Current opening width
+  /// Success Determination
+  /// @param [in] time Current Time
+  /// @param [in] current_distance Current Width
   void CheckForSuccess(const rclcpp::Time& time, const double current_distance);
 
-  /// Callback when opening width command is received on topic
-  /// @param [in] msg Opening width
+  /// Callback when the width command arrives via topic
+  /// @param [in] msg Width
   void DistanceCommandCallback(const std_msgs::msg::Float32::SharedPtr msg);
 
-  /// Command set
-  /// @param [in] distance  Opening width
-  /// @param [in] stop_flag Control stop flag
+  /// Set Command
+  /// @param [in] distance Width
+  /// @param [in] stop_flag Control Stop Flag
   void SetCommandValue(const double distance);
 
-  /// Goal position permissible error [m]
+  /// Allowable Error of Goal Position [m]
   double goal_tolerance_;
-  /// Velocity threshold for stall determination [rad/s]
+  /// Speed Threshold for Stall Judgement [rad/s]
   double stall_velocity_threshold_;
-  /// Time for stall determination [s]
+  /// Time for Stall Judgement [s]
   double distance_control_stall_timeout_;
-  /// Opening width control P gain
+  /// P Gain for Width Control
   double distance_control_pgain_;
-  /// Opening width control I gain
+  /// I Gain for Width Control
   double distance_control_igain_;
-  /// Opening width control D gain
+  /// D Gain for Width Control
   double distance_control_dgain_;
-  /// Maximum angle [rad]
+  /// Maximum Angle [rad]
   double hand_motor_joint_max_;
-  /// Minimum angle [rad]
+  /// Minimum Angle [rad]
   double hand_motor_joint_min_;
 
-  // Maximum opening width [m]
+  // Maximum Width [m]
   double distance_max_;
-  // Minimum opening width [m]
+  // Minimum Width [m]
   double distance_min_;
-  // Integrated error value
+  // Integral Value of Error
   double integrated_distance_error_;
-  // Previous error value
+  // Previous Value of Error
   double last_error_;
 
-  // Last operation time
+  // Last Operating Time
   rclcpp::Time last_movement_time_;
 
-  /// Opening width command reception
+  /// Current Target Position
+  double current_command_pos_;
+
+  /// Width Command Reception
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr distance_command_sub_;
 
-  /// Fingertip distance calculator
-  HrhGripperSetDistanceCalculator::Ptr distance_calculator_;
+  /// Fingertip Distance Calculator
+  HrhGripperDistanceCalculator::Ptr distance_calculator_;
 
-  /// Goal buffer
+  /// Goal Buffer
   realtime_tools::RealtimeBuffer<double> goal_buffer_;
 
-  /// Motion stop flag buffer
+  /// Operation Stop Flag Buffer
   realtime_tools::RealtimeBuffer<bool> stop_flag_buffer_;
 };
 

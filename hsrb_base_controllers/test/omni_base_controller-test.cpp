@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_controller-test.cpp
-/// @brief Test of omnidirectional cart velocity controller
+/// @brief Test for omnidirectional cart velocity controller
 
 #include <string>
 #include <vector>
@@ -199,7 +199,7 @@ void OmniBaseControllerTest<CommandHandleType>::WaitForReady(
 typedef ::testing::Types<PositionHandle, VelocityHandle> TestTypes;
 TYPED_TEST_SUITE(OmniBaseControllerTest, TestTypes);
 
-/// Move the cart by giving constant speed commands to x, y
+/// Command a constant velocity to x, y and move the cart
 TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
   this->SetupController();
   auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
@@ -248,7 +248,7 @@ TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
   EXPECT_NEAR(wheel_odom.twist.twist.angular.z, 0.0, kEpsilon);
 }
 
-/// Check if it correctly follows the test trajectory input through the topic
+/// Check whether the trajectory input via topics is being correctly tracked
 TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
   this->SetupController();
   auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -268,7 +268,7 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
   for (int i = 0; i < 100; ++i) {
     this->SpinOnce(loop_rate);
 
-    // Originally existed in the test, so check it just in case
+    // Check as it originally existed in the test
     auto state = this->state_counter_->last_msg();
     for (int i = 0; i < 3; ++i) {
       ASSERT_LT(fabs(state.error.positions[i]),  kPositionErrorThreshold);
@@ -287,7 +287,7 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kVelocityErrorThreshold);
 }
 
-/// Check if it correctly follows the test trajectory input through action
+/// Check whether the trajectory input via actions is being correctly tracked
 TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -369,7 +369,7 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 }
 
-/// Check if it can appropriately generate and follow the trajectory even when a command value exceeding PI in the rotational direction is input
+/// Check whether trajectory generation and tracking work properly even when command values exceeding PI in rotation are input
 TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -422,7 +422,7 @@ TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
   EXPECT_NEAR(base_state.actual.positions[2], -2.5, kEpsilon);
 }
 
-/// Check if it stops correctly when unable to follow the test trajectory input through the topic
+/// Check whether it stops correctly when the trajectory input via topics cannot be tracked
 TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   this->SetupController();
   auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -444,7 +444,7 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   }
   EXPECT_GT(max_error, 0.5);
 
-  // Appropriate threshold to check that it was stopped without much progress
+  // A suitable threshold to check that it was stopped before much progress could be made
   auto base_state = this->state_counter_->last_msg();
   EXPECT_LT(base_state.actual.positions[0], 0.2);
 
@@ -454,7 +454,7 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
 }
 
-/// Check if it stops correctly when unable to follow the test trajectory input through action
+/// Check whether it stops correctly when the trajectory input via actions cannot be tracked
 TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -487,7 +487,7 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED);
 }
 
-/// Check if it can correctly return a failure result when the accuracy is insufficient for the goal of the test trajectory input through action
+/// Check whether it correctly returns a failure result when accuracy is insufficient for the goal of the test trajectory input via actions
 TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -520,7 +520,7 @@ TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED);
 }
 
-/// Test of action cancellation
+/// Action cancellation test
 TYPED_TEST(OmniBaseControllerTest, ActionCancel) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -546,7 +546,7 @@ TYPED_TEST(OmniBaseControllerTest, ActionCancel) {
   EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-/// Send Goal twice in succession (the first is canceled by ClearActiveGoal)
+/// Send a Goal twice in succession (the prior one is canceled by ClearActiveGoal)
 TYPED_TEST(OmniBaseControllerTest, SendGoalTwice) {
   this->SetupController();
   using ActionType = control_msgs::action::FollowJointTrajectory;
@@ -574,7 +574,7 @@ TYPED_TEST(OmniBaseControllerTest, SendGoalTwice) {
       goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-/// Check if configure fails when cart coordinate axis parameters are missing
+/// Check whether configure fails when cart coordinate axis parameters are missing
 TYPED_TEST(OmniBaseControllerTest, NoOdomCoordParameter) {
   this->controller_ = std::make_shared<OmniBaseController>();
 
@@ -615,7 +615,7 @@ TYPED_TEST(OmniBaseControllerTest, EmptyTrajectoryGoal) {
   EXPECT_EQ(goal_handle, nullptr);
 }
 
-/// Check if a speed limit is applied when speed command exceeds the threshold
+/// Check whether speed limitation is applied when the speed command exceeds the threshold
 TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
   this->SetupController();
   auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
@@ -628,13 +628,13 @@ TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
     geometry_msgs::msg::Twist command_velocity;
     switch (i) {
       case 0:
-        // Positive speed exceeding the limit in the x direction
+        // Positive speed exceeding the limit in the x-direction
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 0.0;
         break;
       case 1:
-        // Negative speed exceeding the limit in the y direction
+        // Negative speed exceeding the limit in the y-direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = -10.0;
         command_velocity.angular.z = 0.0;
@@ -646,7 +646,7 @@ TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
         command_velocity.angular.z = 40.0;
         break;
       case 3:
-        // Speeds exceeding the limit in the x and yaw directions (check if the limit is applied twice)
+        // Speed exceeding the limit in x and yaw directions (check if the limit is applied twice)
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
@@ -662,7 +662,7 @@ TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
 
       auto state = internal_state_counter->last_msg();
       if (state.desired.velocities.size() == 3) {
-        // Consider decimal point error and compare with a buffer of one ten-thousandth
+        // Allow a buffer of one ten-thousandth to account for decimal point errors
         ASSERT_LE(std::abs(state.desired.velocities[0]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[1]), kWheelVelocityLimitThreshold * 1.0001);
         ASSERT_LE(std::abs(state.desired.velocities[2]), kYawVelocityLimitThreshold * 1.0001);
@@ -671,10 +671,10 @@ TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
   }
 }
 
-/// Test of switching the cart's control methods
+/// Test for switching cart control methods
 TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   this->SetupController();
-  // First is speed
+  // Start with velocity
   auto vel_publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
       std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
 
@@ -694,7 +694,7 @@ TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // From here, trajectory
+  // Transition to trajectory
   auto trj_publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
       std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
   trj_publisher->publish(GetTestTrajectory());
@@ -719,7 +719,7 @@ TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // Speed again
+  // Return to velocity
   for (int i = 0; i < 200; ++i) {
     vel_publisher->publish(command_velocity);
     this->SpinOnce(loop_rate);

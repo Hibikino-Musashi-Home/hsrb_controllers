@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_input_odometry.hpp
-/// @brief Odometry class for omnidirectional vehicles
+/// @brief Odometry class for omnidirectional vehicle
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 

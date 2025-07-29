@@ -25,7 +25,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test of Hrh opening width time-dependent control action
+/// @brief Test of Hrh opening width time-following control action
 
 #include <gtest/gtest.h>
 
@@ -40,13 +40,13 @@ namespace hsrb_gripper_controller {
 class FollowDistanceTrajectoryActionTest : public GripperActionTestBase<control_msgs::action::FollowJointTrajectory> {
  public:
   FollowDistanceTrajectoryActionTest() : GripperActionTestBase("follow_distance_trajectory") {
-    distance_calculator_ = std::make_shared<HrhGripperSetDistanceCalculator>();
+    distance_calculator_ = std::make_shared<HrhGripperDistanceCalculator>();
   }
   virtual ~FollowDistanceTrajectoryActionTest() = default;
 
   void SetUp() override;
  protected:
-  HrhGripperSetDistanceCalculator::Ptr distance_calculator_;
+  HrhGripperDistanceCalculator::Ptr distance_calculator_;
 };
 
 void FollowDistanceTrajectoryActionTest::SetUp() {
@@ -65,7 +65,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, ActionSucceeded) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position near the target location after calling Update
+  // The trajectory is confirmed during the first update, so move the position near the target after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_distances;
@@ -105,7 +105,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, GoalToleranceViolated) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position near the target location after calling Update
+  // The trajectory is confirmed during the first update, so move the position near the target after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(distance_calculator_->GetPositionFromDistance(0.105));
@@ -149,7 +149,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, PreemptFromOutside) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // State does not change due to interruption
+  // The state does not change due to the interruption
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
     rclcpp::spin_some(node_->get_node_base_interface());
@@ -176,7 +176,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, CancelGoal) {
 
   double last_command = hardware_->position->command();
 
-  // Throw a cancel
+  // Throw a cancellation
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -188,7 +188,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, CancelGoal) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // State does not change due to interruption
+  // The state does not change due to the interruption
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
     rclcpp::spin_some(node_->get_node_base_interface());
@@ -209,7 +209,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, DistanceGoalTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position after calling Update
+  // The trajectory is confirmed during the first update, so move the position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(distance_calculator_->GetPositionFromDistance(0.105));
@@ -239,7 +239,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, PositionGoalTimeTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position after calling Update
+  // The trajectory is confirmed during the first update, so move the position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(distance_calculator_->GetPositionFromDistance(0.105));
@@ -251,7 +251,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, PositionGoalTimeTolerance) {
     controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   }
 
-  // Did not call Update after exceeding goal_time_tolerance but becomes STATUS_ABORTED in humble.
+  // The goal_time_tolerance exceeded without calling Update, but in humble it results in STATUS_ABORTED.
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
@@ -269,7 +269,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, DistanceMaxThreashold) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position near the target location after calling Update
+  // The trajectory is confirmed during the first update, so move the position near the target after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_positions;
@@ -310,7 +310,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, DistanceMinThreashold) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Since the trajectory is determined during the first update, move the position near the target location after calling Update
+  // The trajectory is confirmed during the first update, so move the position near the target after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_positions;
@@ -542,7 +542,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithoutOpenLoopControl) {
     command_distances.push_back(distance_calculator_->GetDistanceFromPosition(hardware_->position->command()));
   }
 
-  // Behavior increases monotonically from the current value and increases again from the current value midway
+  // Monotonic increase from the current value, increases again from the current value in between
   uint32_t command_jumping = 0;
   double previous_command = 0.05;
   for (double command : command_distances) {
@@ -554,9 +554,9 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithoutOpenLoopControl) {
   }
   EXPECT_EQ(command_jumping, 1);
 
-  // Expectation is 0.01 because 10 frames at 100Hz and 0.1m/sec, buffer appropriately due to unstable loop
+  // Expected value is 0.01 for 10 frames at 100Hz with 0.1m/sec, buffer is provided as the loop is unstable
   EXPECT_NEAR((command_distances[15] - command_distances[5]), 0.01, 0.01);
-  // Speed should be the same in the second half
+  // Speed should be the same in the latter half
   EXPECT_NEAR((command_distances[50] - command_distances[40]), 0.01, 0.01);
 }
 
@@ -590,7 +590,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithOpenLoopControl) {
     command_distances.push_back(distance_calculator_->GetDistanceFromPosition(hardware_->position->command()));
   }
 
-  // Continues to increase monotonically from initial value (0.0) but changes speed at 25 frames
+  // Continuously increasing monotonically from the initial value (0.0), speed changes at 25 points
   double previous_command = 0.0;
   for (double command : command_distances) {
     EXPECT_LE(command, (0.1 + kEpsilon));
@@ -598,12 +598,12 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithOpenLoopControl) {
     previous_command = command;
   }
 
-  // Expectation is 0.02 because 10 frames at 100Hz and 0.2m/sec, buffer appropriately due to unstable loop
+  // Expected value is 0.02 for 10 frames at 100Hz with 0.2m/sec, buffer is provided as the loop is unstable
   EXPECT_NEAR(command_distances[15] - command_distances[5], 0.02, 0.01);
-  // Speed should be halved in the second half
+  // Speed should be halved in the latter half
   EXPECT_NEAR(command_distances[50] - command_distances[40], 0.01, 0.01);
 
-  // Create the client first for shortening test time and make wait_for finish quickly
+  // To shorten the test time, create the client first so that wait_for completes quickly
   auto apply_force_client = rclcpp_action::create_client<tmc_control_msgs::action::GripperApplyEffort>(
       node_, std::string(kControllerNodeName) + "/apply_force");
 
@@ -618,7 +618,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithOpenLoopControl) {
     command_distances.push_back(distance_calculator_->GetDistanceFromPosition(hardware_->position->command()));
   }
 
-  // Monotonically decreases from the last command value 0.1
+  // Monotonically decreasing from the last command value 0.1
   previous_command = 0.1;
   for (double command : command_distances) {
     EXPECT_GE(command, (0.05 - kEpsilon));
@@ -626,7 +626,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithOpenLoopControl) {
     previous_command = command;
   }
 
-  // When switching to other control modes, the retained value is reset and connects from current
+  // Switching to another control mode resets the retained value and connects from the current
   apply_force_client->wait_for_action_server();
   auto apply_force_goal = tmc_control_msgs::action::GripperApplyEffort::Goal();
   apply_force_goal.effort = 1.0;
@@ -643,7 +643,7 @@ TEST_F(FollowDistanceTrajectoryActionTest, WithOpenLoopControl) {
     command_distances.push_back(distance_calculator_->GetDistanceFromPosition(hardware_->position->command()));
   }
 
-  // Monotonically increases from the current value (0.0)
+  // Monotonic increase from the current value (0.0)
   previous_command = 0.0;
   for (double command : command_distances) {
     EXPECT_LE(command, (0.1 + kEpsilon));

@@ -36,7 +36,7 @@ DAMAGE.
 #include <joint_trajectory_controller/trajectory.hpp>
 
 #include "hsrb_gripper_controller/hrh_gripper_action.hpp"
-#include "hsrb_gripper_controller/hrh_gripper_set_distance_action.hpp"
+#include "hsrb_gripper_controller/hrh_gripper_distance.hpp"
 
 namespace hsrb_gripper_controller {
 
@@ -54,54 +54,57 @@ class HrhGripperFollowDistanceTrajectoryAction
 
   void PreemptActiveGoal() override;
 
+  trajectory_msgs::msg::JointTrajectoryPoint GetReferenceState() override;
+  trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() override;
+
  protected:
   /// Implementation of Action Initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Check whether the goal is acceptable
+  /// Check if the goal is acceptable
   bool ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// Update the action target
+  /// Update the action goal
   void UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
 
-  /// Callback when the opening width trajectory command is received on a topic
+  /// Callback when opening width trajectory command arrives via topic
   /// @param [in] msg Trajectory
   void DistanceTrajectoryCommandCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
 
-  /// Create a trajectory with restricted upper and lower limits
+  /// Create trajectory with limited upper and lower bounds
   /// @param [in] msg Opening Width Trajectory
   void LimitTrajectory(const trajectory_msgs::msg::JointTrajectory& distance_trajectory);
 
-  /// Success Judgment
-  /// @param [in] time             Current Time
-  /// @param [in] current_distance Current Opening Width
+  /// Success determination
+  /// @param [in] time             Current time
+  /// @param [in] current_distance Current opening width
   void CheckForSuccess(const rclcpp::Time& time, const double current_distance);
 
-  /// Default allowable error for goal position [m]
+  /// Default goal position allowable error [m]
   double default_goal_tolerance_;
-  /// Default allowable error for goal arrival time [s]
+  /// Default allowable error of the time to reach the goal [s]
   double default_goal_time_tolerance_;
-  // Maximum Opening Width [m]
+  // Maximum opening width [m]
   double distance_max_;
-  // Minimum Opening Width [m]
+  // Minimum opening width [m]
   double distance_min_;
 
-  // Whether to continue from the existing desired when a new trajectory arrives
+  // Whether to connect from existing desired when new trajectory arrives
   // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
-  // The state sampled last
+  // Last sampled state
   rclcpp::Time last_sampled_time_;
   std::optional<trajectory_msgs::msg::JointTrajectoryPoint> last_command_state_;
-  /// Trajectory Command Reception
+  /// Trajectory command reception
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr distance_trajectory_command_sub_;
 
-  /// Inter-finger Distance Calculator
-  HrhGripperSetDistanceCalculator::Ptr distance_calculator_;
+  /// Fingertip distance calculator
+  HrhGripperDistanceCalculator::Ptr distance_calculator_;
 
-  /// Maintain Trajectory
+  /// Hold trajectory
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_;
   std::shared_ptr<joint_trajectory_controller::Trajectory> trajectory_ptr_;
   realtime_tools::RealtimeBuffer<trajectory_msgs::msg::JointTrajectory::SharedPtr> trajectory_msg_buffer_;
 
-  /// Buffer for Goal Condition
+  /// Goal condition buffer
   realtime_tools::RealtimeBuffer<GoalCondition> goal_condition_buffer_;
 };
 

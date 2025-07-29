@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state.cpp
-/// @brief Class for the state of an omnidirectional cart
+/// @brief Omni-directional cart status class
 #include <hsrb_base_controllers/omni_base_state.hpp>
 
 #include <string>
@@ -42,7 +42,7 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Cart state publish frequency [Hz]
+// Cart status publish frequency [Hz]
 const double kDefaultStatePublishRate = 50.0;
 
 void ConvertVector(const Eigen::VectorXd& input_vector,

@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test class for the kinematic model of an omnidirectional vehicle.
+/// @brief Test class for the kinematic model of an omnidirectional vehicle
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -53,10 +53,10 @@ const double kOdomAngularErrorLimit = 0.01;
 namespace hsrb_base_controllers {
 const OmniBaseSize kOmniBaseCorrectSize = { 1.0, 1.0, 1.0 };
 
-// Test of initial configuration parameters.
+// Test for initial setting parameters
 TEST(TwinCasterDriveTest, InvalidParameter) {
-  // Initialization with invalid parameters.
-  // Can it properly raise exceptions?
+  // Initialization with invalid parameters
+  // Can it correctly throw exceptions?
   OmniBaseSize minus_tread_size = { -1.0, 1.0, 1.0 };
   EXPECT_ANY_THROW(TwinCasterDrive minus_tread(minus_tread_size));
   OmniBaseSize zero_tread_size = { 0.0, 1.0, 1.0 };
@@ -71,11 +71,11 @@ TEST(TwinCasterDriveTest, InvalidParameter) {
 }
 
 
-// Test if kinematics and inverse kinematics are correctly matched.
+// Test if kinematics and inverse kinematics correspond correctly
 TEST(TwinCasterDriveTest, CircularConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // In any steered axis angle state, does kinematics and inverse kinematics transformation revert to original values?
+  // In any steering axis angle state, do forward kinematics and inverse kinematics transformation return to the original values?
   for (int i = -360; i < 360; ++i) {
     const double angle = M_PI * static_cast<double>(i) / 180.0;
     drive.Update(angle);
@@ -96,11 +96,11 @@ TEST(TwinCasterDriveTest, CircularConversion) {
 }
 
 
-// Test if the transformation at velocity 0 is correctly performed.
+// Test if the velocity zero conversion is done correctly
 TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // Joint angular velocity -> vehicle velocity.
+  // Joint angular velocity -> platform velocity
   Eigen::Vector3d joint_velocities(0.0, 0.0, 0.0);
   Eigen::Vector3d base_velocity =
       drive.ConvertForward(joint_velocities);
@@ -108,7 +108,7 @@ TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
   EXPECT_NEAR(base_velocity(kIndexBaseY), 0.0, kLinearErrorLimit);
   EXPECT_NEAR(base_velocity(kIndexBaseTheta), 0.0, kLinearErrorLimit);
 
-  // Vehicle velocity -> joint angular velocity.
+  // Platform velocity -> joint angular velocity
   base_velocity << 0.0, 0.0, 0.0;
   joint_velocities = drive.ConvertInverse(base_velocity);
   EXPECT_NEAR(joint_velocities(kJointIDRightWheel), 0.0, kLinearErrorLimit);
@@ -117,12 +117,12 @@ TEST(TwinCasterDriveTest, ZeroVelocityConversion) {
 }
 
 
-// Test if transformation from joint angular velocity to vehicle velocity is correctly performed.
+// Test if conversion from joint angular velocity to platform velocity is done correctly
 TEST(TwinCasterDriveTest, ForwardConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // Move two wheel axes at the same speed for straight motion.
-  // Can it correctly calculate vehicle velocity at any speed and any steered axis angle?
+  // Move both wheel axes at the same speed to drive straight
+  // Can it correctly calculate the platform velocity at any speed and steering axis angle?
   boost::mt19937 rng(static_cast<uint64_t>(time(0)));
   boost::uniform_real<> linear_dist(-100.0, 100.0);
   boost::variate_generator<
@@ -141,8 +141,8 @@ TEST(TwinCasterDriveTest, ForwardConversion) {
     EXPECT_NEAR(base_velocity(kIndexBaseTheta), 0.0, kAngularErrorLimit);
   }
 
-  // Output velocity moving only the steered axis.
-  // Is the vehicle not moving in the translation direction and only outputting rotational velocity?
+  // Output velocity to move only the steering axis
+  // Is the platform only producing rotational velocity and not moving in the translational direction?
   boost::uniform_real<> angular_dist(-10.0, 10.0);
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > angular_rand(rng, angular_dist);
@@ -160,12 +160,12 @@ TEST(TwinCasterDriveTest, ForwardConversion) {
 }
 
 
-// Test if transformation from vehicle velocity to joint angular velocity is correctly performed.
+// Test if conversion from platform velocity to joint angular velocity is done correctly
 TEST(TwinCasterDriveTest, InverseConversion) {
   TwinCasterDrive drive(kOmniBaseCorrectSize);
 
-  // Straight movement of the vehicle at any steered axis angle.
-  // Are the wheel axes moving at the correct speed and at the same speed?
+  // Steer the platform straight with the steering axis at any angle
+  // Are the wheel axes moving at the correct and same speed?
   boost::mt19937 rng(static_cast<uint64_t>(time(0)));
   boost::uniform_real<> linear_dist(-100.0, 100.0);
   boost::variate_generator<
@@ -185,8 +185,8 @@ TEST(TwinCasterDriveTest, InverseConversion) {
     EXPECT_NEAR(joint_velocities(kJointIDSteer), 0.0, kJointErrorLimit);
   }
 
-  // Rotation of the vehicle at any steered axis angle.
-  // Is the steered axis moving at the correct speed?
+  // Rotate the platform with the steering axis at any angle
+  // Is the steering axis moving at the correct speed?
   boost::uniform_real<> angular_dist(-10.0, 10.0);
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > angular_rand(rng, angular_dist);
@@ -204,7 +204,7 @@ TEST(TwinCasterDriveTest, InverseConversion) {
 }
 
 
-// Test if odometry of the vehicle is correctly calculated from joint angular velocity.
+// Test if odometry for the platform is correctly calculated from joint angular velocity
 TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
   boost::scoped_ptr<class TwinCasterDrive> drive(
       new TwinCasterDrive(kOmniBaseCorrectSize));
@@ -214,7 +214,7 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
   boost::variate_generator<
       boost::mt19937, boost::uniform_real<> > rand_r(rng, joint_dist);
 
-  // Can odometry be correctly calculated even when starting from any joint angle?
+  // Can odometry be correctly calculated when starting from any joint angle?
   for (int i = 0; i < 10; ++i) {
     drive.reset(new TwinCasterDrive(kOmniBaseCorrectSize));
 
@@ -224,7 +224,7 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
     Eigen::Vector3d base_odometry =
         drive->UpdateOdometry(period, joint_positions, joint_velocities);
 
-    // Is the odometry zero at the first instance?
+    // Is the odometry zero on the first occasion?
     EXPECT_NEAR(base_odometry(kIndexBaseX), 0.0, kLinearErrorLimit);
     EXPECT_NEAR(base_odometry(kIndexBaseY), 0.0, kLinearErrorLimit);
     EXPECT_NEAR(base_odometry(kIndexBaseTheta), 0.0, kAngularErrorLimit);
@@ -234,7 +234,7 @@ TEST(TwinCasterDriveTest, BaseOdometryUpdate) {
     double expected_distance =
         velocity * period * static_cast<double>(update_num);
 
-    // Specify joint angular velocity for translation -> spot turning.
+    // Specify joint angular velocity that performs translational movement -> in-place rotation
     // Is odometry calculated to the correct position?
     Eigen::Vector3d base_velocity(velocity, 0.0 , 0.0);
     for (int j = 0; j < update_num; ++j) {

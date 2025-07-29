@@ -45,7 +45,7 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperFollowTrajectoryAction
-/// @brief Hrh Trajectory Tracking Action Class
+/// @brief Hrh Orbit Following Action Class
 class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::action::FollowJointTrajectory> {
  public:
   /// Constructor
@@ -57,32 +57,35 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
 
   void PreemptActiveGoal() override;
 
+  trajectory_msgs::msg::JointTrajectoryPoint GetReferenceState() override;
+  trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() override;
+
  protected:
-  /// Implementation of action initialization
+  /// Implementation of Action Initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
   /// Check if the goal is acceptable
   bool ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// Update the action goal
+  /// Update the action's target
   void UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// Get the current joint position of the control target
-  /// @return Joint position
+  /// Get the current control target joint position
+  /// @return Joint Position
   double GetPosition() const;
 
-  /// Default goal position tolerance [rad]
+  /// Default Allowable Error for Goal Position [rad]
   double default_goal_tolerance_;
-  /// Default goal reach time tolerance [s]
+  /// Default Allowable Error for Goal Arrival Time [s]
   double default_goal_time_tolerance_;
 
-  // Whether to connect from existing desired when a new trajectory arrives
+  // Whether to connect from the existing desired when a new orbit arrives
   // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
-  /// Flag for controlling with an output axis corrected for spring amounts
+  /// Flag for whether to perform control with an output axis corrected for spring amount
   bool do_output_position_control_;
-  /// Lower limit of current when closing [A], if 0.0 or more, do not correct the command value due to overcurrent
+  /// Lower limit of current when closing [A], if 0.0 or higher, no correction of command value due to overcurrent
   double current_min_;
-  /// Increment of correction value to increase (open) the command value during overcurrent when closing
+  /// Step width of correction value to increase (open) command value in case of overcurrent when closing
   double position_correction_incresing_step_;
-  /// Increment to return (reduce) the correction value when not overcurrent, more stable if smaller than increasing
+  /// Step width to return (decrease) correction value when not in overcurrent, more stable if smaller than increasing
   double position_correction_decresing_step_;
   /// Correction value to the command value
   double position_correction_value_;
@@ -91,10 +94,10 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
   rclcpp::Time last_sampled_time_;
   std::optional<trajectory_msgs::msg::JointTrajectoryPoint> last_command_state_;
 
-  /// Callback when trajectory command is received on topic
+  /// Callback when trajectory command arrives via topic
   /// @param [in] msg Trajectory
   void TrajectoryCommandCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
-  /// Trajectory command received
+  /// Trajectory Command Reception
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
 
   /// Hold the trajectory
@@ -103,20 +106,20 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
   realtime_tools::RealtimeBuffer<trajectory_msgs::msg::JointTrajectory::SharedPtr> trajectory_msg_buffer_;
 
   /// @struct GoalCondition
-  /// @brief Goal condition
+  /// @brief Goal Conditions
   struct GoalCondition {
-    /// Command position [rad]
+    /// Command Position [rad]
     double position;
-    /// Target reach time
+    /// Target Arrival Time
     rclcpp::Time expected_arrival_time;
-    /// Time to stop trajectory tracking
+    /// Time to stop orbit following
     rclcpp::Time abort_time;
-    /// Goal reach time tolerance
+    /// Allowable Error for Goal Arrival Time
     rclcpp::Time goal_time_tolerance;
-    /// Goal position tolerance
+    /// Allowable Error for Goal Position
     double goal_tolerance;
   };
-  /// Buffer for goal conditions
+  /// Buffer for Goal Conditions
   realtime_tools::RealtimeBuffer<GoalCondition> goal_condition_buffer_;
 };
 

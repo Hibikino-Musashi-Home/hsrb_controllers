@@ -34,7 +34,7 @@ namespace {
 
 // Default goal tolerance [m]
 const double kDefaultDistanceGoalTolerance = 0.003;
-// Default goal reach tolerance time [s]
+// Default goal acceptance time [s]
 const double kDefaultPositionGoalTimeTolerance = 0.05;
 // Default hand upper limit angle [rad]
 const double kDefaultHandMotorJointMax = 1.2;
@@ -104,7 +104,7 @@ void HrhGripperFollowDistanceTrajectoryAction::Update(const rclcpp::Time& time) 
   feedback->actual.positions = {current_distance};
   active_goal_handle->setFeedback(feedback);
 
-  // Determine success or failure
+  // Success or failure judgment
   CheckForSuccess(time, current_distance);
 }
 
@@ -114,6 +114,31 @@ void HrhGripperFollowDistanceTrajectoryAction::PreemptActiveGoal() {
   if (!controller_->IsActiveControlMode(shared_from_this())) {
     last_command_state_.reset();
   }
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperFollowDistanceTrajectoryAction::GetReferenceState() {
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+
+  if (last_command_state_.has_value()) {
+    reference.positions = { distance_calculator_->GetPositionFromDistance(last_command_state_.value().positions[0]) };
+    reference.time_from_start = last_command_state_.value().time_from_start;
+  } else {
+    reference.positions = { controller_->GetCurrentPosition() };
+    reference.velocities = { controller_->GetCurrentVelocity() };
+    reference.effort = { controller_->GetCurrentTorque() };
+  }
+
+  return reference;
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperFollowDistanceTrajectoryAction::GetFeedbackState() {
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+
+  feedback.positions = { controller_->GetCurrentPosition() };
+  feedback.velocities = { controller_->GetCurrentVelocity() };
+  feedback.effort = { controller_->GetCurrentTorque() };
+
+  return feedback;
 }
 
 /// Implementation of action initialization
@@ -133,7 +158,7 @@ bool HrhGripperFollowDistanceTrajectoryAction::InitImpl(
   trajectory_msg_buffer_.writeFromNonRT(std::shared_ptr<trajectory_msgs::msg::JointTrajectory>());
 
   // Initialize class for opening width calculation
-  distance_calculator_ = std::make_shared<HrhGripperSetDistanceCalculator>();
+  distance_calculator_ = std::make_shared<HrhGripperDistanceCalculator>();
   if (!distance_calculator_->InitializeHandSizeData(node)) {
     return false;
   }
@@ -160,7 +185,7 @@ bool HrhGripperFollowDistanceTrajectoryAction::ValidateGoal(
   return ValidateTrajectory(node_, goal.trajectory, controller_->joint_name());
 }
 
-/// Update the action's target
+/// Update the action target
 void HrhGripperFollowDistanceTrajectoryAction::UpdateActionImpl(
     const control_msgs::action::FollowJointTrajectory::Goal& goal) {
   // path_tolerance is not supported
@@ -197,7 +222,7 @@ void HrhGripperFollowDistanceTrajectoryAction::UpdateActionImpl(
   LimitTrajectory(goal.trajectory);
 }
 
-/// Callback when the opening width trajectory command is received on a topic
+/// Callback when opening width trajectory command is received on the topic
 void HrhGripperFollowDistanceTrajectoryAction::DistanceTrajectoryCommandCallback(
     const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) {
   if (ValidateTrajectory(node_, *msg, controller_->joint_name())) {
@@ -207,12 +232,12 @@ void HrhGripperFollowDistanceTrajectoryAction::DistanceTrajectoryCommandCallback
   }
 }
 
-/// Create trajectory restricted by upper and lower limits
+/// Create trajectory with limited upper and lower limits
 void HrhGripperFollowDistanceTrajectoryAction::LimitTrajectory(
     const trajectory_msgs::msg::JointTrajectory& distance_trajectory) {
   trajectory_msgs::msg::JointTrajectory::SharedPtr position_trajectory =
       std::make_shared<trajectory_msgs::msg::JointTrajectory>(distance_trajectory);
-  for (int index = 0; index < distance_trajectory.points.size(); ++index) {
+  for (auto index = 0u; index < distance_trajectory.points.size(); ++index) {
     position_trajectory->points[index].positions[0] =
         std::max(std::min(distance_trajectory.points[index].positions[0], distance_max_), distance_min_);
   }
@@ -220,29 +245,29 @@ void HrhGripperFollowDistanceTrajectoryAction::LimitTrajectory(
   trajectory_msg_buffer_.writeFromNonRT(position_trajectory);
 }
 
-/// Success determination
+/// Success judgment
 void HrhGripperFollowDistanceTrajectoryAction::CheckForSuccess(
     const rclcpp::Time& time, const double current_distance) {
-  // Do not determine success or failure if not an action
+  // Do not make success or failure judgment if not an action
   const auto active_goal = *goal_handle_buffer_.readFromNonRT();
   if (!active_goal) {
     return;
   }
 
-  // Do not determine until the reach time
+  // Do not judge until arrival time
   auto goal_condition = *(goal_condition_buffer_.readFromRT());
   if (time < goal_condition.expected_arrival_time) {
     return;
   }
 
   if (std::abs(current_distance - goal_condition.goal) < goal_condition.goal_tolerance) {
-    // Success if the current opening width is within tolerance
+    // Success if current opening width is within tolerance
     auto result = std::make_shared<control_msgs::action::FollowJointTrajectory::Result>();
     result->set__error_code(control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL);
     active_goal->setSucceeded(result);
     goal_handle_buffer_.writeFromNonRT(RealtimeGoalHandlePtr());
   } else if (time >= goal_condition.abort_time) {
-    // Failure if not within tolerance for a certain time
+    // Fail if not within tolerance for a certain time
     auto result = std::make_shared<control_msgs::action::FollowJointTrajectory::Result>();
     result->set__error_code(control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED);
     active_goal->setAborted(result);

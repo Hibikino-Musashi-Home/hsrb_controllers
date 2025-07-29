@@ -61,21 +61,21 @@ class OmniBaseController
   // Controller Initialization
   controller_interface::CallbackReturn on_init() override;
 
-  // ros2_control Interface Configuration
+  // Setting the ros2_control Interface
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-  // Calculate and Update Cart Joint Angular Velocity
+  // Calculate and Update the Cart Joint Angular Velocity
   controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-  // Function Called During Configure
+  // Function called during configure
   controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
-  // Function Called During Activate
+  // Function called during activate
   controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
-  // Function Called During Deactivate
+  // Function called during deactivate
   controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
-  // Returns Whether Commands Can Be Accepted
+  // Returns if commands can be received
   bool IsAcceptable() override;
 
   // Set Input Velocity Command
@@ -89,14 +89,14 @@ class OmniBaseController
   void ResetTrajectory() override;
 
  protected:
-  // Initialization Part Other Than ControllerInterface::init, Split for Testing
+  // Initialization other than ControllerInterface::init, division for testing
   bool InitImpl();
 
   // Tolerance for Trajectory Following
   SegmentTolerances default_tolerances_;
   SegmentTolerances active_tolerances_;
-  // Check Tolerances During Trajectory Following
-  // Returns a Positive Number for Continuing Following, or an Error Code (0 ~ -5) of control_msgs/action/FollowJointTrajectory for Stopping Following
+  // Check of tolerances during trajectory following
+  // Returns a positive number to continue following, or error codes (0 ~ -5) from control_msgs/action/FollowJointTrajectory to stop following
   int32_t CheckTorelances(const ControllerBaseState& state, bool before_last_point, double time_from_trajectory_end);
 
   // Input Velocity Command Subscriber
@@ -117,7 +117,7 @@ class OmniBaseController
   OmniBaseVelocityControl::Ptr velocity_control_;
   OmniBaseTrajectoryControl::Ptr trajectory_control_;
 
-  // Publish Cart State
+  // Publishing Cart State
   StatePublisher::Ptr joint_state_publisher_;
   StatePublisher::Ptr base_state_publisher_;
 };

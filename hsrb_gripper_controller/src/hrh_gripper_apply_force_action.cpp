@@ -45,9 +45,9 @@ namespace {
 
 // Default force error threshold [N]
 const double kDefaultForceGoalTolerance = 0.1;
-// Default velocity threshold for stall detection [rad/s]
+// Default stall determination speed threshold [rad/s]
 const double kDefaultStallVelocityThreshold = 0.05;
-// Default time for stall detection [s]
+// Default stall determination time [s]
 const double kDefaultStallTimeout = 2.0;
 // Default low-pass filter gain
 const double kDefaultForceLPFCoeff = 0.8;
@@ -55,7 +55,7 @@ const double kDefaultForceLPFCoeff = 0.8;
 const double kDefaultForceControlPgain = 0.1;
 const double kDefaultForceControlIgain = 0.15;
 const double kDefaultForceControlDgain = 0.4;
-// Default maximum value for error integral accumulation
+// Default maximum value of error integral accumulation
 const double kDefaultForceIerrMax = 0.15;
 
 }  // unnamed namespace
@@ -126,7 +126,7 @@ double HrhGripperApplyForceCalculator::CalculateForce(double hand_motor_pos, dou
 double HrhGripperApplyForceCalculator::CalculateInternalForce(double hand_motor_pos,
                                                               const std::vector<double>& calib_p0,
                                                               const std::vector<double>& calib_p1) const {
-  // Size check is performed at the time of reading
+  // Size check is performed at the time of loading
   return fabs(calib_p1[0] - calib_p0[0]) >
                  std::numeric_limits<double>::epsilon() * fmax(1, fmax(calib_p1[0], calib_p0[0]))  // NOLINT
              ? (calib_p1[1] - calib_p0[1]) / (calib_p1[0] - calib_p0[0]) * (hand_motor_pos - calib_p0[0]) + calib_p0[1]
@@ -147,18 +147,38 @@ HrhGripperApplyForceAction::HrhGripperApplyForceAction(HrhGripperController* con
       force_lpf_coeff_(kDefaultForceLPFCoeff),
       force_lpf_buff_(0.0) {}
 
-/// Cycle update process
+/// Periodic update process
 void HrhGripperApplyForceAction::Update(const rclcpp::Time& time) {
   if (!IsActive() && *(stop_flag_buffer_.readFromRT())) {
     return;
   }
-  controller_->SetComandPosition(GetCommandPos());
+  current_command_pos_ = GetCommandPos();
+  controller_->SetComandPosition(current_command_pos_);
   CheckForSuccess(time);
 }
 
 void HrhGripperApplyForceAction::PreemptActiveGoal() {
   HrhGripperAction::PreemptActiveGoal();
   stop_flag_buffer_.writeFromNonRT(true);
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperApplyForceAction::GetReferenceState() {
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+
+  reference.positions = { current_command_pos_ };
+  reference.effort = { *(command_buffer_.readFromRT()) };
+
+  return reference;
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperApplyForceAction::GetFeedbackState() {
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+
+  feedback.positions = { controller_->GetCurrentPosition() };
+  feedback.velocities = { controller_->GetCurrentVelocity() };
+  feedback.effort = { current_force_lpf_ };
+
+  return feedback;
 }
 
 /// Implementation of action initialization
@@ -192,7 +212,7 @@ bool HrhGripperApplyForceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode:
   return true;
 }
 
-/// Update the target of the action
+/// Update the action's target
 void HrhGripperApplyForceAction::UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) {
   command_buffer_.writeFromNonRT(goal.effort);
   stop_flag_buffer_.writeFromNonRT(goal.do_control_stop);
@@ -229,15 +249,15 @@ double HrhGripperApplyForceAction::GetCommandPos() {
 void HrhGripperApplyForceAction::CheckForSuccess(const rclcpp::Time& time) {
   double current_velocity = controller_->GetCurrentVelocity();
   if (fabs(current_velocity) > stall_velocity_threshold_) {
-    // Judge as moving and update the last moving time
+    // Determine it is moving, and update the last time it moved
     last_movement_time_ = time;
   } else if ((time - last_movement_time_).seconds() > stall_timeout_) {
-    // Judge as stall state
+    // Determine as stall state
     auto result = std::make_shared<tmc_control_msgs::action::GripperApplyEffort::Result>();
     result->stalled = true;
     result->effort = current_force_lpf_;
 
-    // Compare command value and current value when stalled and in equilibrium state
+    // Compare command value and current value when reaching equilibrium state while stalled
     double command = *(command_buffer_.readFromRT());
     const auto active_goal = *goal_handle_buffer_.readFromNonRT();
     if (!active_goal) {

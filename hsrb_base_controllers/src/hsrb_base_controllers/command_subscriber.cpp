@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file command_subscriber.cpp
-/// @brief Input command control class for omni-directional cart control
+/// @brief Control class for input commands used in omnidirectional vehicle control
 #include <hsrb_base_controllers/command_subscriber.hpp>
 
 #include <rclcpp_action/create_server.hpp>
@@ -39,7 +39,7 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Default value of action state update frequency [Hz]
+// Default value for action state update frequency [Hz]
 constexpr double kDefaultActionMonitorRate = 100.0;
 }
 
@@ -51,12 +51,12 @@ CommandSubscriber::CommandSubscriber(const rclcpp_lifecycle::LifecycleNode::Shar
     : node_(node), controller_(controller) {}
 
 
-/// Initialization of input velocity command class
+/// Initialization of the input velocity command class
 CommandVelocitySubscriber::CommandVelocitySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                      IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
-  // QoS for diff_drive_controller is SystemDefaults, steering_controllers is generally SensorDataQoS
-  // SensorDataQoS is adopted considering it is important to obtain the latest value in a timely manner
+  // The QoS for diff_drive_controller is SystemDefaults, while for steering_controllers, it is mainly SensorDataQoS
+  // Considering the importance of obtaining the latest values in a timely manner, SensorDataQoS is adopted
   velocity_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
       "~/cmd_vel", rclcpp::SensorDataQoS(),
       std::bind(&CommandVelocitySubscriber::CommandVelocityCallback, this, std::placeholders::_1));
@@ -72,11 +72,11 @@ void CommandVelocitySubscriber::CommandVelocityCallback(const geometry_msgs::msg
 }
 
 
-/// Initialization of input trajectory command class
+/// Initialization of the input trajectory command class
 CommandTrajectorySubscriber::CommandTrajectorySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                          IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
-  // Match QoS with joint_trajectory_controller
+  // Match the QoS for joint_trajectory_controller
   trajectory_subscriber_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
       "~/joint_trajectory", rclcpp::SensorDataQoS(),
       std::bind(&CommandTrajectorySubscriber::CommandTrajectoryCallback, this, std::placeholders::_1));
@@ -95,7 +95,7 @@ void CommandTrajectorySubscriber::CommandTrajectoryCallback(
 }
 
 
-/// Initialization of input trajectory action command class
+/// Initialization of the input trajectory action command class
 TrajectoryActionServer::TrajectoryActionServer(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                const std::vector<std::string>& cordinates,
                                                IControllerCommandInterface* controller)

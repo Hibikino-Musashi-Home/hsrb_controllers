@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Utility functions and classes for testing
+/// @brief Util functions and classes for testing
 
 #include <fstream>
 #include <memory>
@@ -39,10 +39,12 @@ DAMAGE.
 #include <vector>
 #include <rclcpp/rclcpp.hpp>
 
+#include <control_msgs/msg/joint_trajectory_controller_state.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <lifecycle_msgs/msg/transition.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
 
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <hsrb_gripper_controller/hrh_gripper_action.hpp>
@@ -111,6 +113,67 @@ std::string ReadRobotDescriptionFromFile() {
   xml_file.close();
   return robot_description;
 }
+
+void CheckTrajectoryPointData(const trajectory_msgs::msg::JointTrajectoryPoint& check_target,
+                              const trajectory_msgs::msg::JointTrajectoryPoint& check_data) {
+  ASSERT_EQ(check_target.positions.size(), check_data.positions.size());
+  for (auto i = 0u; i < check_target.positions.size(); i++) {
+    EXPECT_NEAR(check_target.positions[i], check_data.positions[i], kEpsilon);
+  }
+
+  ASSERT_EQ(check_target.velocities.size(), check_data.velocities.size());
+  for (auto i = 0u; i < check_target.velocities.size(); i++) {
+    EXPECT_NEAR(check_target.velocities[i], check_data.velocities[i], kEpsilon);
+  }
+
+  ASSERT_EQ(check_target.accelerations.size(), check_data.accelerations.size());
+  for (auto i = 0u; i < check_target.accelerations.size(); i++) {
+    EXPECT_NEAR(check_target.accelerations[i], check_data.accelerations[i], kEpsilon);
+  }
+
+  ASSERT_EQ(check_target.effort.size(), check_data.effort.size());
+  for (auto i = 0u; i < check_target.effort.size(); i++) {
+    EXPECT_NEAR(check_target.effort[i], check_data.effort[i], kEpsilon);
+  }
+}
+
+void CheckStateMsg(const control_msgs::msg::JointTrajectoryControllerState& msg,
+                   const trajectory_msgs::msg::JointTrajectoryPoint& reference,
+                   const trajectory_msgs::msg::JointTrajectoryPoint& feedback,
+                   const trajectory_msgs::msg::JointTrajectoryPoint& error,
+                   const std::vector<std::string>& joint_names) {
+  ASSERT_EQ(msg.joint_names.size(), joint_names.size());
+  for (auto i = 0u; i < msg.joint_names.size(); i++) {
+    EXPECT_EQ(msg.joint_names[i], joint_names[i]);
+  }
+
+  CheckTrajectoryPointData(msg.reference, reference);
+  CheckTrajectoryPointData(msg.feedback, feedback);
+  CheckTrajectoryPointData(msg.error, error);
+}
+
+template<typename TYPE>
+class SubscriptionCounter {
+ public:
+  using Ptr = std::shared_ptr<SubscriptionCounter>;
+
+  SubscriptionCounter(const rclcpp::Node::SharedPtr& node, const std::string& topic_name) : count_(0) {
+    subscriber_ = node->template create_subscription<TYPE>(
+        topic_name, 1, std::bind(&SubscriptionCounter<TYPE>::Callback, this, std::placeholders::_1));
+  }
+
+  uint32_t count() const { return count_; }
+  TYPE last_msg() const { return last_msg_; }
+
+ private:
+  void Callback(const typename TYPE::SharedPtr msg) {
+    ++count_;
+    last_msg_ = *msg;
+  }
+  typename rclcpp::Subscription<TYPE>::SharedPtr subscriber_;
+  uint32_t count_;
+  TYPE last_msg_;
+};
 
 
 class TestableHrhGripperController : public HrhGripperController {

@@ -29,7 +29,6 @@ DAMAGE.
 
 #include <limits>
 #include <rclcpp/rclcpp.hpp>
-#include <urdf/model.h>
 
 #include <tmc_exxx_servo_motor_protocol/exxx_common.hpp>
 
@@ -40,132 +39,24 @@ namespace {
 
 // Default goal tolerance [m]
 const double kDefaultDistanceGoalTolerance = 0.003;
-// Default stall determination speed threshold [rad/s]
+// Default stall detection speed threshold [rad/s]
 const double kDefaultStallVelocityThreshold = 0.05;
 // Default arrival determination time [s]
 const double kDefaultDistanceControlStallTimeout = 1.0;
-// Default opening width control P gain
+// Default opening control P gain
 const double kDefaultDistanceControlPgain = 2.0;
-// Default opening width control I gain
+// Default opening control I gain
 const double kDefaultDistanceControlIgain = 0.5;
-// Default opening width control D gain
+// Default opening control D gain
 const double kDefaultDistanceControlDgain = 2.5;
-// Default hand upper limit angle [rad]
+// Default hand upper angle [rad]
 const double kDefaultHandMotorJointMax = 1.2;
-// Default hand lower limit angle [rad]
+// Default hand lower angle [rad]
 const double kDefaultHandMotorJointMin = -0.5;
-// Default physical parameters of the hand
-const double kDefaultProximalToDistalZ = 0.07;
-const double kDefaultDistancePalmToTip = 0.002194;
-// Default name of the URDF robot model to load
-const char* kDefaultRobotModelName = "robot_description";
-// Default name of the node that loads the URDF robot model
-const char* kDefaultRobotModelNode = "robot_state_publisher";
-// Default name of the axis to read from the URDF robot model
-const char* kDefaultProximalJointName = "hand_l_proximal_joint";
-const char* kDefaultDistalJointName = "hand_l_distal_joint";
-const char* kDefaultMimicDistalJointName = "hand_l_mimic_distal_joint";
-const char* kDefaultFingerTipFrameJointName = "hand_l_finger_tip_frame_joint";
 
 }  // unnamed namespace
 
 namespace hsrb_gripper_controller {
-
-HrhGripperSetDistanceCalculator::HrhGripperSetDistanceCalculator()
-    : proximal_to_distal_z_(kDefaultProximalToDistalZ),
-      distance_palm_to_tip_(kDefaultDistancePalmToTip) {}
-
-bool HrhGripperSetDistanceCalculator::InitializeHandSizeData(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
-  // URDF loading
-  auto urdf = std::make_shared<urdf::Model>();
-  if (!urdf->initString(GetRobotDescription(node))) {
-    RCLCPP_ERROR(node->get_logger(), "Failed to parse URDF");
-    return false;
-  }
-
-  // Axis name to retrieve
-  auto proximal_joint_name = GetParameter(node, "proximal_joint", kDefaultProximalJointName);
-  auto distal_joint_name = GetParameter(node, "distal_joint", kDefaultDistalJointName);
-  auto mimic_distal_joint_name = GetParameter(node, "mimic_distal_joint", kDefaultMimicDistalJointName);
-  auto finger_tip_frame_joint_name =
-      GetParameter(node, "finger_tip_frame_joint", kDefaultFingerTipFrameJointName);
-
-  // Retrieve each axis from the URDF
-  auto proximal_joint = urdf->getJoint(proximal_joint_name);
-  auto distal_joint = urdf->getJoint(distal_joint_name);
-  auto mimic_distal_joint = urdf->getJoint(mimic_distal_joint_name);
-  auto finger_tip_frame_joint = urdf->getJoint(finger_tip_frame_joint_name);
-  if (!proximal_joint || !distal_joint || !mimic_distal_joint || !finger_tip_frame_joint) {
-    RCLCPP_ERROR(node->get_logger(), "Could not get joint param from urdf");
-    return false;
-  }
-
-  // Retrieve necessary parameters
-  double distal_to_tip_y = fabs(finger_tip_frame_joint->parent_to_joint_origin_transform.position.y);
-  double distal_to_tip_z = fabs(finger_tip_frame_joint->parent_to_joint_origin_transform.position.z);
-  double distal_joint_angle_offset = fabs(distal_joint->mimic->offset);
-  double palm_to_proximal_y = fabs(proximal_joint->parent_to_joint_origin_transform.position.y);
-
-  // Store values used for calculating opening width
-  proximal_to_distal_z_ = fabs(mimic_distal_joint->parent_to_joint_origin_transform.position.z);
-  distance_palm_to_tip_ = palm_to_proximal_y
-                          - (distal_to_tip_y * cos(distal_joint_angle_offset)
-                             + distal_to_tip_z * sin(distal_joint_angle_offset));
-
-  return true;
-}
-
-// Load URDF
-std::string HrhGripperSetDistanceCalculator::GetRobotDescription(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
-  // First try to load from one's own node, if not possible, try loading from model_node_name
-  // In the case of Gazebo, since robot_description cannot be placed in controller_manager, it must be loaded from a separate node
-  const std::string model_name = GetParameter(node, "model_name", kDefaultRobotModelName);
-  const std::string robot_description_out = GetParameter(node, model_name, "");
-  if (!robot_description_out.empty()) {
-    return robot_description_out;
-  }
-
-  const std::string model_node_name = GetParameter(node, "model_node_name", kDefaultRobotModelNode);
-  const int32_t timeout = GetParameter(node, "parameter_connection_timeout", 60);
-  // Temporarily generate a node object.
-  std::string node_name = std::string(node->get_name());
-  auto gripper_controller_node = rclcpp_lifecycle::LifecycleNode::make_shared(node_name);
-  auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(
-      gripper_controller_node, model_node_name);
-  int32_t wait_for_service_count = 0;
-  while (!parameters_client->wait_for_service(std::chrono::seconds(1))) {
-    ++wait_for_service_count;
-    if (!rclcpp::ok()) {
-      return "";
-    } else if (wait_for_service_count >= timeout) {
-      RCLCPP_ERROR_STREAM(node->get_logger(), "Could not connect parameter server of " << model_node_name);
-      return "";
-    }
-  }
-  return parameters_client->get_parameter(model_name, std::string());
-}
-
-/// Calculate opening width from hand angle
-double HrhGripperSetDistanceCalculator::GetDistanceFromPosition(double hand_motor_pos) const {
-  return GetDistanceFromPosition(hand_motor_pos, 0.0, 0.0);
-}
-
-/// Calculate opening width from hand angle and each finger angle
-double HrhGripperSetDistanceCalculator::GetDistanceFromPosition(
-    double hand_motor_pos, double left_spring_proximal_joint_pos,
-    double right_spring_proximal_joint_pos) const {
-  double hand_left_position = left_spring_proximal_joint_pos + hand_motor_pos;
-  double hand_right_position = right_spring_proximal_joint_pos + hand_motor_pos;
-  double ploximal_to_distal = proximal_to_distal_z_ * (sin(hand_left_position) + sin(hand_right_position));
-  return ploximal_to_distal + 2.0 * distance_palm_to_tip_;
-}
-
-/// Calculate hand angle from opening width
-double HrhGripperSetDistanceCalculator::GetPositionFromDistance(double distance) const {
-  return asin((distance / 2.0 - distance_palm_to_tip_) / proximal_to_distal_z_);
-}
 
 /// Constructor
 HrhGripperSetDistanceAction::HrhGripperSetDistanceAction(HrhGripperController* controller)
@@ -185,7 +76,7 @@ void HrhGripperSetDistanceAction::Update(const rclcpp::Time& time) {
     return;
   }
 
-  // Calculate current fingertip distance
+  // Calculate the current distance between fingertips
   double current_distance =
       distance_calculator_->GetDistanceFromPosition(controller_->GetCurrentPosition(),
                                                     controller_->GetLeftSpringPosition(),
@@ -199,20 +90,39 @@ void HrhGripperSetDistanceAction::Update(const rclcpp::Time& time) {
     active_goal_handle->setFeedback(feedback);
   }
 
-  // Calculate and set command value
-  controller_->SetComandPosition(GetCommandPos(current_distance));
+  // Calculate and set command values
+  current_command_pos_ = GetCommandPos(current_distance);
+  controller_->SetComandPosition(current_command_pos_);
 
-  // Success or failure determination
+  // Determine success or failure
   CheckForSuccess(time, current_distance);
 }
 
-/// Cancel ongoing action
+/// Cancel the ongoing action
 void HrhGripperSetDistanceAction::PreemptActiveGoal() {
   HrhGripperAction::PreemptActiveGoal();
   stop_flag_buffer_.writeFromNonRT(true);
 }
 
-/// Implement action initialization
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperSetDistanceAction::GetReferenceState() {
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+
+  reference.positions = { current_command_pos_ };
+
+  return reference;
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperSetDistanceAction::GetFeedbackState() {
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+
+  feedback.positions = { controller_->GetCurrentPosition() };
+  feedback.velocities = { controller_->GetCurrentVelocity() };
+  feedback.effort = { controller_->GetCurrentTorque() };
+
+  return feedback;
+}
+
+/// Implementation of action initialization
 bool HrhGripperSetDistanceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   // Set parameters
   goal_tolerance_ =
@@ -234,17 +144,17 @@ bool HrhGripperSetDistanceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode
   goal_buffer_.initRT(0.0);
   stop_flag_buffer_.initRT(true);
 
-  // Initialize class for calculating opening width
-  distance_calculator_ = std::make_shared<HrhGripperSetDistanceCalculator>();
+  // Initialize class for opening calculation
+  distance_calculator_ = std::make_shared<HrhGripperDistanceCalculator>();
   if (!distance_calculator_->InitializeHandSizeData(node)) {
     return false;
   }
 
-  // Calculate upper and lower limits of opening width
+  // Calculate the upper and lower limits of the opening
   distance_max_ = distance_calculator_->GetDistanceFromPosition(hand_motor_joint_max_);
   distance_min_ = distance_calculator_->GetDistanceFromPosition(hand_motor_joint_min_);
 
-  // Receive opening width
+  // Receive opening
   distance_command_sub_ = node->create_subscription<std_msgs::msg::Float32>(
       "~/command_distance",
       1,
@@ -253,19 +163,19 @@ bool HrhGripperSetDistanceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode
   return true;
 }
 
-/// Update action target
+/// Update the goal of the action
 void HrhGripperSetDistanceAction::UpdateActionImpl(
     const tmc_control_msgs::action::GripperSetDistance::Goal& goal) {
   SetCommandValue(goal.distance);
 }
 
-/// Calculate target position from the error between opening width command value and current value
+/// Calculate the target position from the error between the commanded value and the current value of the opening
 double HrhGripperSetDistanceAction::GetCommandPos(const double current_distance) {
-  // Calculate error
+  // Calculate the error
   const double ref_distance = *(goal_buffer_.readFromRT());
   const double error = ref_distance - current_distance;
 
-  // Operation command
+  // Command motion
   integrated_distance_error_ += error;
   double command_position = controller_->GetCurrentPosition()
                             + distance_control_pgain_ * error
@@ -277,19 +187,19 @@ double HrhGripperSetDistanceAction::GetCommandPos(const double current_distance)
   return std::max(std::min(command_position, hand_motor_joint_max_), hand_motor_joint_min_);
 }
 
-/// Success determination
+/// Determine success
 void HrhGripperSetDistanceAction::CheckForSuccess(const rclcpp::Time& time, const double current_distance) {
   double current_velocity = controller_->GetCurrentVelocity();
   if (fabs(current_velocity) > stall_velocity_threshold_) {
-    // Determine that it is moving and update the last movement time
+    // Determine if moving, update last moved time
     last_movement_time_ = time;
   } else if ((time - last_movement_time_).seconds() > distance_control_stall_timeout_) {
-    // Determine as stall state
+    // Determine stall state
     auto result = std::make_shared<tmc_control_msgs::action::GripperSetDistance::Result>();
     result->distance = current_distance;
     result->stalled = true;
 
-    // Stop operation
+    // Stop motion
     stop_flag_buffer_.writeFromNonRT(true);
 
     const auto active_goal = *goal_handle_buffer_.readFromNonRT();
@@ -308,7 +218,7 @@ void HrhGripperSetDistanceAction::CheckForSuccess(const rclcpp::Time& time, cons
   }
 }
 
-/// Callback when opening width command arrives via topic
+/// Callback when opening command is received via topic
 void HrhGripperSetDistanceAction::DistanceCommandCallback(const std_msgs::msg::Float32::SharedPtr msg) {
   controller_->PreemptActiveGoal();
   controller_->ChangeControlMode(shared_from_this());
