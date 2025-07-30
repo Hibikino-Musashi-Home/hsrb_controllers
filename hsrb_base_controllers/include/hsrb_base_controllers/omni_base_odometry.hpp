@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_odometry.hpp
-/// @brief Omnidirectional Car Odometry Class
+/// @brief Omnidirectional Cart Odometry Class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_ODOMETRY_HPP_
 
@@ -67,13 +67,13 @@ class Odometry {
   Eigen::Vector3d velocity() const { return velocity_; }
 
  protected:
-  // Car Odometry
+  // Cart Odometry
   Eigen::Vector3d odometry_;
-  // Car Velocity
+  // Cart Speed
   Eigen::Vector3d velocity_;
 };
 
-/// Omnidirectional Car Odometry Calculation Class
+/// Omnidirectional Cart Odometry Calculation Class
 class BaseOdometry : public Odometry {
  public:
   using Ptr = std::shared_ptr<BaseOdometry>;
@@ -93,7 +93,7 @@ class BaseOdometry : public Odometry {
   InputOdometry::Ptr input_odom_;
 };
 
-/// Omnidirectional Car Wheel Odometry Calculation Class
+/// Omnidirectional Cart Wheel Odometry Calculation Class
 class WheelOdometry : public Odometry {
  public:
   using Ptr = std::shared_ptr<WheelOdometry>;
@@ -117,12 +117,12 @@ class WheelOdometry : public Odometry {
   std::string tf_prefix_;
   std::string wheel_base_frame_;
   std::string wheel_odom_frame_;
-  // Omnidirectional Car Model
+  // Omnidirectional Cart Model
   TwinCasterDrive::Ptr twin_drive_;
 
-  // Time of the last odometry publication
+  // Time when the odometry was last published
   rclcpp::Time last_odometry_published_time_;
-  // Time of the last odometry tf publication
+  // Time when the odometry tf was last published
   rclcpp::Time last_transform_published_time_;
 
   // Odometry Publisher
@@ -131,7 +131,7 @@ class WheelOdometry : public Odometry {
   OdometryPublisherPtr odometry_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_publisher_impl_;
 
-  // Odometry publication interval
+  // Odometry publishing interval
   rclcpp::Duration odometry_publish_period_;
 
   // Odometry tf Publisher
@@ -140,7 +140,7 @@ class WheelOdometry : public Odometry {
   TFPublisherPtr transform_publisher_;
   rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr transform_publisher_impl_;
 
-  // Odometry tf publication interval
+  // Odometry tf publishing interval
   rclcpp::Duration transform_publish_period_;
 };
 

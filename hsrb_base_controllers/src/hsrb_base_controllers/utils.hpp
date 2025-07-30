@@ -52,7 +52,7 @@ auto GetParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
   }
 }
 
-// Get parameter using default value when negative
+// Get parameter that uses default value in case of non-positive
 double GetPositiveParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name,
                             double default_value);
 

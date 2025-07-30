@@ -40,21 +40,21 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Default publishing frequency of cart odometry [Hz]
+// Default value for cart odometry publish frequency [Hz]
 constexpr double kDefaultOdometryPublishRate = 30.0;
-// Default publishing frequency of cart odometry TF [Hz]
+// Default value for cart odometry TF publish frequency [Hz]
 constexpr double kDefaultTransformPublishRate = 30.0;
 }
 
 namespace hsrb_base_controllers {
 
-/// Initialize the odometry calculation class
+/// Initialization of the odometry calculation class
 Odometry::Odometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
     : odometry_(Eigen::Vector3d::Zero()),
       velocity_(Eigen::Vector3d::Zero()) {}
 
 
-/// Initialize the omnidirectional cart wheel odometry calculation class
+/// Initialization of the omnidirectional cart wheel odometry calculation class
 BaseOdometry::BaseOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) : Odometry(node) {
   input_odom_ = std::make_shared<InputOdometry>(node);
 }
@@ -68,24 +68,24 @@ void BaseOdometry::UpdateOdometry(double period,
               current_odom.pose.pose.position.y,
               2.0 * std::atan2(current_odom.pose.pose.orientation.z,
                                current_odom.pose.pose.orientation.w);
-  // Because odometry that cannot calculate speed may be included, such as laser odometry
-  // Input the speed calculated within the controller
+  // Because there may be odometry like laser odometry where speed cannot be calculated
+  // Enter the speeds calculated within the controller
   velocity_ = velocities;
 }
 
-/// Initialize odometry data
+/// Initialize the odometry data
 void BaseOdometry::InitOdometry() {
   input_odom_->InitOdometry();
 }
 
-/// Initialize the omnidirectional cart wheel odometry calculation class
+/// Initialization of the omnidirectional cart wheel odometry calculation class
 WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const OmniBaseSize& omnibase_size)
     : Odometry(node),
       last_odometry_published_time_(node->now()),
       last_transform_published_time_(node->now()),
       odometry_publish_period_(0, 0),
       transform_publish_period_(0, 0) {
-  // Retrieve the frame name related to cart odometry
+  // Get the frame name related to the cart odometry
   wheel_odom_frame_ = GetParameter(node, "wheel_odom_map_frame", "odom");
   wheel_base_frame_ = GetParameter(node, "wheel_odom_base_frame", "base_footprint_wheel");
   tf_prefix_ = GetParameter(node, "tf_prefix", "");
@@ -102,10 +102,10 @@ WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& n
   transform_publisher_ = std::make_unique<TFPublisher>(transform_publisher_impl_);
   transform_publisher_->msg_.transforms.resize(1);
 
-  // Retrieve the publishing interval of cart odometry
+  // Get the publishing interval for cart odometry
   const double odometry_publish_rate = GetPositiveParameter(node, "odometry_publish_rate", kDefaultOdometryPublishRate);
   odometry_publish_period_ = rclcpp::Duration::from_seconds(1.0 / odometry_publish_rate);
-  // Retrieve the publishing interval of cart odometry TF
+  // Get the publishing interval for cart odometry TF
   const double transform_publish_rate = GetPositiveParameter(node, "transform_publish_rate",
                                                              kDefaultTransformPublishRate);
   transform_publish_period_ = rclcpp::Duration::from_seconds(1.0 / transform_publish_rate);
@@ -115,24 +115,24 @@ WheelOdometry::WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& n
 void WheelOdometry::UpdateOdometry(double period,
                                    const Eigen::Vector3d& positions,
                                    const Eigen::Vector3d& velocities) {
-  // Update odometry and cart speed based on wheel position and speed
+  // Update odometry and cart speed from wheel position and speed
   odometry_ = twin_drive_->UpdateOdometry(period, positions, velocities);
   twin_drive_->Update(positions[kJointIDSteer]);
   velocity_ = twin_drive_->ConvertForward(velocities);
 }
 
 
-/// Issue odometry
+/// Publish odometry
 void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
   const Eigen::Vector3d wheel_odometry = odometry_;
   const Eigen::Vector3d wheel_odom_velocity = velocity_;
   const Eigen::Quaterniond wheel_quat_trans(
       Eigen::AngleAxisd(wheel_odometry(kIndexBaseTheta), Eigen::Vector3d::UnitZ()));
 
-  // Publish the odometry topic
+  // Publish odometry topic
   if (time - last_odometry_published_time_ >= odometry_publish_period_) {
     last_odometry_published_time_ += odometry_publish_period_;
-    // Publish the wheel odometry topic
+    // Publish wheel odometry topic
     if (odometry_publisher_ && odometry_publisher_->trylock()) {
       auto& msg = odometry_publisher_->msg_;
       msg.header.stamp = time;
@@ -153,7 +153,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     }
   }
 
-  // Publish the odometry TF
+  // Publish tf of odometry
   if (time - last_transform_published_time_ >= transform_publish_period_) {
     last_transform_published_time_ += transform_publish_period_;
     geometry_msgs::msg::Transform transform;
@@ -165,7 +165,7 @@ void WheelOdometry::PublishOdometry(const rclcpp::Time& time) {
     transform.rotation.z = wheel_quat_trans.z();
     transform.rotation.w = wheel_quat_trans.w();
 
-    // Publish the wheel odometry TF
+    // Publish tf of wheel odometry
     if (transform_publisher_ && transform_publisher_->trylock()) {
       auto& msg = transform_publisher_->msg_.transforms.front();
       msg.header.stamp = time;

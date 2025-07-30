@@ -40,6 +40,9 @@ DAMAGE.
 
 #include <controller_interface/controller_interface.hpp>
 
+#include "hsrb_gripper_controller/hrh_gripper_distance.hpp"
+#include "hsrb_gripper_controller/hrh_gripper_state.hpp"
+
 namespace hsrb_gripper_controller {
 
 class IHrhGripperAction;
@@ -70,13 +73,13 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
       const rclcpp_lifecycle::State& previous_state) override;
 
-  /// Returns whether commands can be accepted
+  /// Returns whether the command is acceptable
   bool IsAcceptable();
 
-  /// Interrupt the active goal
+  /// Interrupts the active goal
   void PreemptActiveGoal();
 
-  /// Access to interface
+  /// Access to the interface
   double GetCurrentPosition() const;
   double GetCurrentVelocity() const;
   double GetCurrentTorque() const;
@@ -90,7 +93,7 @@ class HrhGripperController : public controller_interface::ControllerInterface {
 
   std::string joint_name() const { return joint_name_; }
 
-  /// Change control mode
+  /// Change the control mode
   /// @param[in] mode Control mode
   void ChangeControlMode(std::shared_ptr<IHrhGripperAction> action);
 
@@ -99,22 +102,22 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   bool IsActiveControlMode(std::shared_ptr<IHrhGripperAction> action) const { return action == active_action_; }
 
  protected:
-  // Initialization of parts other than ControllerInterface::init, separation for testing
+  // Initialization of parts other than ControllerInterface::init, for testing separation
   bool InitImpl();
 
  private:
   /// Control mode command buffer
   realtime_tools::RealtimeBuffer<int32_t> command_control_mode_;
 
-  /// Target joint name
+  /// Target joint names
   std::string joint_name_;
 
-  /// Name of left and right finger joints
+  /// Left and right finger joint names
   std::string left_spring_joint_;
   std::string right_spring_joint_;
 
   /// TODO(Takeshita) indexでなくポインタをもたせる？
-  /// Index of interface
+  /// Interface index
   uint32_t current_position_index_;
   uint32_t current_velocity_index_;
   uint32_t current_effort_index_;
@@ -130,8 +133,14 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   /// All actions
   std::vector<std::shared_ptr<IHrhGripperAction> > actions_;
 
-  /// Executing action
+  /// Actions in progress
   std::shared_ptr<IHrhGripperAction> active_action_;
+
+  /// State publication
+  StatePublisher::Ptr gripper_state_publisher_;
+
+  /// Publication of fingertip distance
+  DistancePublisher::Ptr gripper_distance_publisher_;
 };
 
 }  // namespace hsrb_gripper_controller

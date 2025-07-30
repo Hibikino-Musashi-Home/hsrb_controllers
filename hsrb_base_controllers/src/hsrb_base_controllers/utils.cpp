@@ -36,7 +36,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-// Retrieve the parameter that uses the default value for non-positive cases
+// If not positive, get the parameter that uses the default value
 double GetPositiveParameter(
     const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name, double default_value) {
   auto value = GetParameter(node, parameter_name, default_value);

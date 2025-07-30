@@ -31,9 +31,9 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file twin_caster_drive.hpp
-/// Reference: Masayoshi Wada, Design and Omnidirectional Movement Control of Four-Wheel Drive Electric Wheelchairs,
-///       Journal of the Robotics Society of Japan Vol.27 No.3, pp.314~324, 2009
-/// Implement the kinematic model of the omnidirectional movement mechanism described in the above paper.
+/// Reference: Masayoshi Wada, Design of a Four-Wheel Drive Electric Wheelchair and Omnidirectional Mobility Control,
+///       Journal of the Robotics Society of Japan Vol.27 No.3, pp.314-324, 2009
+/// Implement the kinematic model of the omnidirectional mobility mechanism described in the above paper.
 #ifndef HSRB_BASE_CONTROLLERS_TWIN_CASTER_DRIVE_HPP_
 #define HSRB_BASE_CONTROLLERS_TWIN_CASTER_DRIVE_HPP_
 
@@ -51,7 +51,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-// Index of each joint axis of the omnidirectional cart
+// Indexes of each joint axis of the omnidirectional trolley
 enum OmniBaseJointID {
   kJointIDRightWheel,
   kJointIDLeftWheel,
@@ -59,7 +59,7 @@ enum OmniBaseJointID {
   kNumOmniBaseJointIDs
 };
 
-// Index of robot state position and orientation
+// Indexes for robot state position and orientation
 enum BaseCoordinateID {
   kIndexBaseX,
   kIndexBaseY,
@@ -67,7 +67,7 @@ enum BaseCoordinateID {
   kNumBaseCoordinateIDs
 };
 
-/// Dimension information of the cart
+/// Dimensions information of the trolley
 struct OmniBaseSize {
   // Tread[m]
   double tread;
@@ -77,7 +77,7 @@ struct OmniBaseSize {
   double wheel_radius;
 };
 
-/// @brief Kinematic model of the omnidirectional movement mechanism
+/// @brief Kinematic model of omnidirectional mobility mechanism
 class TwinCasterDrive : private boost::noncopyable {
  public:
   using Ptr = std::shared_ptr<TwinCasterDrive>;
@@ -101,20 +101,20 @@ class TwinCasterDrive : private boost::noncopyable {
     caster_odometry_ << 0.0, 0.0, 0.0;
   }
 
-  /// Calculate the realized speed of the platform from the given joint velocities
-  /// @param joint_velocity [in] Joint angular velocities (right wheel, left wheel, and steering axis order)
+  /// Calculate the speed of the cargo section achieved from the given joint speeds
+  /// @param joint_velocity [in] Joint angular velocity (right wheel, left wheel, pivot axis sequentially)
   Eigen::Vector3d ConvertForward(const Eigen::Vector3d& joint_velocity) const {
     return jacobian_ * joint_velocity;
   }
 
-  /// Calculate the necessary joint velocities from the given speed of the platform.
-  /// @param base_velocity [in] Platform speed (forward/backward, left/right, rotation in platform coordinate system)
+  /// Calculate the necessary joint speeds from the given speed of the cargo section.
+  /// @param base_velocity [in] Cargo section speed (forward, sideways, rotation in the cargo coordinate system)
   Eigen::Vector3d ConvertInverse(const Eigen::Vector3d& base_velocity) const {
     return inverse_jacobian_ * base_velocity;
   }
 
-  /// Update offset angles between the platform and the caster cart.
-  /// @param caster_position [in] Offset angles between the platform and the caster cart (rad)
+  /// Update the offset angle between the cargo section and caster trolley.
+  /// @param caster_position [in] Offset angle between the cargo section and caster trolley (rad)
   void Update(double caster_position) {
     const double caster_angle = angles::normalize_angle(caster_position);
     const double r = wheel_radius_;
@@ -128,14 +128,14 @@ class TwinCasterDrive : private boost::noncopyable {
     const double j22 = r * sin_v * 0.5 - r * s * cos_v / w;
     const double j31 = r / w;
     const double j32 = -r / w;
-    // It seems that the sign of the second term on the right-hand side of the equation concerning angular velocity in equation (19) of the reference paper is reversed.
+    // It is suspected that the sign of the second term on the right side of the angular velocity equation in formula (19) from the reference paper is reversed.
     jacobian_ << j11, j12, 0,
                  j21, j22, 0,
                  j31, j32, -1.0;
     inverse_jacobian_ = jacobian_.inverse();
   }
 
-  /// Update platform odometry.
+  /// Update the odometry of the cargo section.
   Eigen::Vector3d UpdateOdometry(double period,
                                  const Eigen::Vector3d& joint_position,
                                  const Eigen::Vector3d& joint_velocity) {
@@ -155,7 +155,7 @@ class TwinCasterDrive : private boost::noncopyable {
     const double v = (vr + vl) * 0.5;
     const double w = (vr - vl) / tread_;
 
-    // Update of cart section odometry
+    // Update of odometry for the trolley section
     caster_odometry_[kIndexBaseTheta] += w * dt;
     const double caster_odom_theta = caster_odometry_[kIndexBaseTheta];
     const double delta_x = v * std::cos(caster_odom_theta) * dt;
@@ -163,7 +163,7 @@ class TwinCasterDrive : private boost::noncopyable {
     caster_odometry_[kIndexBaseX] += delta_x;
     caster_odometry_[kIndexBaseY] += delta_y;
 
-    // Update platform odometry from cart section odometry and steering axis angle
+    // Update cargo section odometry from trolley section odometry and steering axis angle
     const double odom_x = caster_odometry_[kIndexBaseX] +
                           caster_offset_ * std::cos(caster_odom_theta);
     const double odom_y = caster_odometry_[kIndexBaseY] +

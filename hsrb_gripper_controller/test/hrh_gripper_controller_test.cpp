@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file hrh_gripper_controller-test.cpp
-/// @brief Test HRH gripper controller, check if action interruption works
+/// @brief Test of HRH gripper controller, check if action interruption works.
 
 #include <gtest/gtest.h>
 #include <lifecycle_msgs/msg/state.hpp>
@@ -39,6 +39,9 @@ DAMAGE.
 
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <std_msgs/msg/float32.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
+
 #include <hsrb_gripper_controller/hrh_gripper_set_distance_action.hpp>
 #include <tmc_control_msgs/action/gripper_apply_effort.hpp>
 #include <tmc_control_msgs/action/gripper_set_distance.hpp>
@@ -57,7 +60,7 @@ class GripperControllerTest : public ::testing::Test {
     controller_ = std::make_shared<TestableHrhGripperController>(node_options);
     controller_node_ = controller_->get_node();
 
-    // To eliminate the effect of multiple update calls in WaitFor, set igain to zero
+    // Set igain to zero to eliminate the effects of multiple update calls in WaitFor.
     controller_node_->declare_parameter<double>("force_control_igain", 0.0);
     EXPECT_EQ(controller_->init(kControllerNodeName), controller_interface::return_type::OK);
 
@@ -84,6 +87,10 @@ class GripperControllerTest : public ::testing::Test {
         client_node_, std::string(kControllerNodeName) + "/set_distance");
     follow_distance_trajectory_action_client_ = rclcpp_action::create_client<FollowTrajectoryAction>(
         client_node_, std::string(kControllerNodeName) + "/follow_distance_trajectory");
+    state_subscriber_ = std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
+        client_node_, std::string(kControllerNodeName) + "/controller_state");
+    distance_subscriber_ = std::make_shared<SubscriptionCounter<std_msgs::msg::Float32>>(
+        client_node_, std::string(kControllerNodeName) + "/fingertip_distance");
 
     EXPECT_TRUE(apply_force_action_client_->wait_for_action_server());
     EXPECT_TRUE(grasp_action_client_->wait_for_action_server());
@@ -116,9 +123,13 @@ class GripperControllerTest : public ::testing::Test {
   using SetDistanceAction = tmc_control_msgs::action::GripperSetDistance;
   rclcpp_action::Client<SetDistanceAction>::SharedPtr set_distance_action_client_;
 
+  SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>::Ptr state_subscriber_;
+  SubscriptionCounter<std_msgs::msg::Float32>::Ptr distance_subscriber_;
+
   void SpinOnce(rclcpp::WallRate& rate) {
     rate.sleep();
     executor_.spin_some();
+    rclcpp::spin_some(client_node_);
     EXPECT_EQ(controller_->update(controller_->get_node()->now(), rclcpp::Duration::from_seconds(0.1)),
               controller_interface::return_type::OK);
   }
@@ -139,10 +150,10 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Wait for apply_force to start
+    // Waiting for apply_force to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
-      // Expected command value is 0.1 * -1.0
+      // 0.1 * -1.0 is the expected command value.
       if (std::abs(hardware_->position->command() + 0.1) < kEpsilon) {
         break;
       }
@@ -155,7 +166,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   std::shared_ptr<rclcpp_action::ClientGoalHandle<FollowTrajectoryAction>> StartFollowTrajectoryAction() {
-    // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
     hardware_->position->set_current(0.96);
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -165,7 +176,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Wait for tracking to start
+    // Waiting for tracking to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->position->command() > 0.96) {
@@ -187,7 +198,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Wait for the grasp to start
+    // Waiting for gripping to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->grasping_flag->bool_command()) {
@@ -202,7 +213,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   std::shared_ptr<rclcpp_action::ClientGoalHandle<SetDistanceAction>> StartSetDistanceAction() {
-    // Set the speed to prevent the action from finishing
+    // Set speed to prevent the action from completing.
     hardware_->velocity->set_current(0.1);
 
     SetDistanceAction::Goal goal;
@@ -212,10 +223,10 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Wait for set_distance to start
+    // Waiting for set_distance to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
-      // Since the goal is approximately 0.33, the command value will be larger than the initial value
+      // Goal is around 0.33, so the command value becomes larger than the initial value.
       if (hardware_->position->command() > 0.0) {
         break;
       }
@@ -228,7 +239,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   std::shared_ptr<rclcpp_action::ClientGoalHandle<FollowTrajectoryAction>> StartFollowDistanceTrajectoryAction() {
-    // Set a value close to the trajectory's goal position (approximately 0.75) to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory (around 0.75).
     hardware_->position->set_current(0.73);
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -238,7 +249,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Wait for tracking to start
+    // Waiting for tracking to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->position->command() > 0.0) {
@@ -253,14 +264,14 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void SendTrajectoryTopic() {
-    // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
     hardware_->position->set_current(1.46);
 
     auto trajectory = MakeTrajectory();
     trajectory.points[0].positions[0] = 1.5;
     trajectory_publisher_->publish(trajectory);
 
-    // Wait for tracking to start
+    // Waiting for tracking to start.
     rclcpp::WallRate rate(100.0);
     while (rclcpp::ok()) {
       SpinOnce(rate);
@@ -272,18 +283,18 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void SendDistanceTopic() {
-    // Set the speed to prevent the process from finishing
+    // Set speed to prevent the process from completing.
     hardware_->velocity->set_current(0.1);
 
     std_msgs::msg::Float32 distance_topic;
     distance_topic.data = 0.05;
     distance_publisher_->publish(distance_topic);
 
-    // Wait for set_distance to start
+    // Waiting for set_distance to start.
     rclcpp::WallRate rate(100.0);
     while (rclcpp::ok()) {
       SpinOnce(rate);
-      // Since the goal is approximately 0.33, the command value will be larger than the initial value
+      // Goal is around 0.33, so the command value becomes larger than the initial value.
       if (hardware_->position->command() > 0.0) {
         break;
       }
@@ -295,7 +306,7 @@ class GripperControllerTest : public ::testing::Test {
     auto trajectory = MakeDistanceTrajectory();
     distance_trajectory_publisher_->publish(trajectory);
 
-    // Wait for tracking to start
+    // Waiting for tracking to start.
     rclcpp::WallRate rate(100.0);
     while (rclcpp::ok()) {
       SpinOnce(rate);
@@ -307,7 +318,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithApplyForceAction() {
-    // Set the speed to allow the action to finish
+    // Set speed to allow the action to complete.
     hardware_->velocity->set_current(0.0);
 
     ApplayEffortAction::Goal goal;
@@ -321,14 +332,14 @@ class GripperControllerTest : public ::testing::Test {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2050));
 
-    // Set to make the target force and the low-passed force have the same value
+    // Set so that the target force and the force after low-pass filtering are the same value.
     hardware_->position->set_current(0.0);
     hardware_->spring_l_position->set_current(5.0);
     hardware_->spring_r_position->set_current(5.0);
     SpinOnce(rate);
     EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), tmc_exxx_servo_motor_protocol::kDriveModeHandPosition);
 
-    // Derived from gain and difference
+    // Derived from gain and difference.
     EXPECT_NEAR(hardware_->position->command(), 0.4 * 1.0, kEpsilon);
 
     auto goal_handle = future_goal_handle.get();
@@ -338,7 +349,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithFollowTrajectoryAction() {
-    // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
     hardware_->position->set_current(0.96);
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -348,7 +359,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_goal_handle);
 
-    // Test trajectory moves to 1.0 in 0.5 seconds
+    // Test trajectory moves to 1.0 in 0.5 seconds.
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
     }
@@ -362,7 +373,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithGraspAction() {
-    // Match current force and target force to ensure action success
+    // Align current force and target force to ensure action success.
     hardware_->effort->set_current(3.0);
 
     ApplayEffortAction::Goal grasp_goal;
@@ -372,7 +383,7 @@ class GripperControllerTest : public ::testing::Test {
     rclcpp::WallRate rate(100.0);
     WaitFor(rate, future_grasp_goal_handle);
 
-    // Wait for the grasp to start
+    // Waiting for gripping to start.
     while (rclcpp::ok()) {
       SpinOnce(rate);
       if (hardware_->grasping_flag->bool_command()) {
@@ -381,11 +392,11 @@ class GripperControllerTest : public ::testing::Test {
     }
     EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), tmc_exxx_servo_motor_protocol::kDriveModeHandGrasp);
 
-    // Grasping
+    // Gripping in progress.
     hardware_->grasping_flag->set_current(true);
     SpinOnce(rate);
 
-    // Grasp complete
+    // Gripping completed.
     hardware_->grasping_flag->set_current(false);
     SpinOnce(rate);
 
@@ -396,10 +407,10 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithSetDistanceAction() {
-    auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+    auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
     ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
-    // Assume the target position temporarily to zero the integral of the difference
+    // Temporarily assume it is at the target position to set the accumulation of differences to zero.
     hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.05));
 
     SetDistanceAction::Goal goal;
@@ -417,7 +428,7 @@ class GripperControllerTest : public ::testing::Test {
     SpinOnce(rate);
     EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), tmc_exxx_servo_motor_protocol::kDriveModeHandPosition);
 
-    // Derived from gain and difference
+    // Derived from gain and difference.
     EXPECT_NEAR(hardware_->position->command(),
                 (current_position + 2.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002),
                 kEpsilon);
@@ -429,10 +440,10 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithFollowDistanceTrajectoryAction() {
-    auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+    auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
     ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
-    // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
     hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.098));
 
     FollowTrajectoryAction::Goal follow_goal;
@@ -444,7 +455,7 @@ class GripperControllerTest : public ::testing::Test {
 
     hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.1));
 
-    // Test trajectory moves to 0.1 in 0.5 seconds
+    // Test trajectory moves to 0.1 in 0.5 seconds.
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
     }
@@ -458,14 +469,14 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithTrajectoryTopic() {
-    // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+    // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
     hardware_->position->set_current(1.46);
 
     auto trajectory = MakeTrajectory();
     trajectory.points[0].positions[0] = 1.5;
     trajectory_publisher_->publish(trajectory);
 
-    // Test trajectory moves to 1.5 in 0.5 seconds
+    // Test trajectory moves to 1.5 in 0.5 seconds.
     rclcpp::WallRate rate(100.0);
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
@@ -475,7 +486,7 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithDistanceTopic() {
-    auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+    auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
     ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
     double current_position = distance_calculator->GetPositionFromDistance(0.052);
@@ -485,7 +496,7 @@ class GripperControllerTest : public ::testing::Test {
     distance_topic.data = 0.05;
     distance_publisher_->publish(distance_topic);
 
-    // Ensure the command is updated only once in the update function
+    // Ensure command is updated only once in the update function.
     rclcpp::WallRate rate(100.0);
     SpinOnce(rate);
 
@@ -496,13 +507,13 @@ class GripperControllerTest : public ::testing::Test {
   }
 
   void PreemptWithDistanceTrajectoryTopic() {
-    auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+    auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
     ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
     auto trajectory = MakeDistanceTrajectory();
     distance_trajectory_publisher_->publish(trajectory);
 
-    // Test trajectory moves to 0.1 in 0.5 seconds
+    // Test trajectory moves to 0.1 in 0.5 seconds.
     rclcpp::WallRate rate(100.0);
     for (int i = 0; i < 60; ++i) {
       SpinOnce(rate);
@@ -514,50 +525,165 @@ class GripperControllerTest : public ::testing::Test {
 
 
 TEST_F(GripperControllerTest, ApplyForceAction) {
+  auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
+  ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
+
+  // Verify the values of controller_state and fingertip_distance before receiving action.
+  rclcpp::WallRate rate(100.0);
+  while ((state_subscriber_->count() == 0) ||
+         (distance_subscriber_->count() == 0)) {
+    SpinOnce(rate);
+  }
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_reference;
+  start_reference.positions = { 0.0 };
+  start_reference.velocities = { 0.0 };
+  start_reference.effort = { 0.0 };
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_error;
+  start_error.positions = { 0.0 };
+  start_error.velocities = { 0.0 };
+  start_error.effort = { 0.0 };
+
+  // Reference is set to the current value.
+  // Reference and feedback are set to the same value.
+  CheckStateMsg(state_subscriber_->last_msg(), start_reference, start_reference, start_error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.0), kEpsilon);
+
   ApplayEffortAction::Goal goal;
   goal.effort = 1.0;
   goal.do_control_stop = false;
 
   auto future_goal_handle = apply_force_action_client_->async_send_goal(goal);
 
-  rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(2050));
 
-  // Set to make the target force and the low-passed force have the same value
+  // Set so that the target force and the force after low-pass filtering are the same value.
   hardware_->spring_l_position->set_current(5.0);
   hardware_->spring_r_position->set_current(5.0);
   SpinOnce(rate);
+
+  // Retrieve the values of controller_state and fingertip_distance again.
+  const uint32_t start_state_cnt = state_subscriber_->count();
+  const uint32_t start_distance_cnt = distance_subscriber_->count();
+  while ((state_subscriber_->count() <= start_state_cnt) ||
+         (distance_subscriber_->count() <= start_distance_cnt)) {
+    rclcpp::spin_some(client_node_);
+  }
+
+  // Should be able to subscribe 3 times with SpinOnce and WaitFor.
+  EXPECT_GE(state_subscriber_->count(), 3);
+  EXPECT_GE(distance_subscriber_->count(), 3);
+
+  // Position in reference is the position command value, effort is the command torque.
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  reference.positions = { 0.4 * 1.0 };
+  reference.effort = { 1.0 };
+
+  // Effort in feedback is the internally calculated value.
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+  feedback.positions = { 0.0 };
+  feedback.velocities = { 0.0 };
+  feedback.effort = { 1.0 };
+
+  // Error is the difference between reference and feedback.
+  trajectory_msgs::msg::JointTrajectoryPoint error;
+  error.positions = { 0.4 * 1.0 };
+  error.effort = { 0.0 };
+
+  CheckStateMsg(state_subscriber_->last_msg(), reference, feedback, error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.0), kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
   EXPECT_TRUE((WaitForStatus<ApplayEffortAction, rclcpp::Node::SharedPtr>(
     controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Derived from gain and difference
+  // Derived from gain and difference.
   EXPECT_NEAR(hardware_->position->command(), 0.4 * 1.0, kEpsilon);
 
   EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), tmc_exxx_servo_motor_protocol::kDriveModeHandPosition);
 }
 
 TEST_F(GripperControllerTest, FollowTrajectoryAction) {
-  // Set a value close to the trajectory's goal position to avoid being aborted due to excessive deviation during trajectory tracking
+  auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
+  ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
+
+  // To prevent excessive deviation from causing abortion during trajectory tracking, set values close to the goal position of the trajectory.
   hardware_->position->set_current(0.96);
+
+  // Verify the values of controller_state and fingertip_distance before receiving action.
+  rclcpp::WallRate rate(100.0);
+  while ((state_subscriber_->count() == 0) ||
+         (distance_subscriber_->count() == 0)) {
+    SpinOnce(rate);
+  }
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_reference;
+  start_reference.positions = { 0.96 };
+  start_reference.velocities = { 0.0 };
+  start_reference.effort = { 0.0 };
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_error;
+  start_error.positions = { 0.0 };
+  start_error.velocities = { 0.0 };
+  start_error.effort = { 0.0 };
+
+  // Reference is set to the current value.
+  // Reference and feedback are set to the same value.
+  CheckStateMsg(state_subscriber_->last_msg(), start_reference, start_reference, start_error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.96), kEpsilon);
 
   FollowTrajectoryAction::Goal goal;
   goal.trajectory = MakeTrajectory();
   auto future_goal_handle = follow_trajectory_action_client_->async_send_goal(goal);
 
-  rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
-  // Test trajectory moves to 1.0 in 0.5 seconds
+  const uint32_t start_state_cnt = state_subscriber_->count();
+  const uint32_t start_distance_cnt = distance_subscriber_->count();
+
+  // Test trajectory moves to 1.0 in 0.5 seconds.
   std::vector<double> command_positions;
   for (int i = 0; i < 60; ++i) {
     SpinOnce(rate);
     command_positions.push_back(hardware_->position->command());
   }
+
+  // Retrieve the values of controller_state and fingertip_distance again.
+  while ((state_subscriber_->count() <= start_state_cnt) ||
+         (distance_subscriber_->count() <= start_distance_cnt)) {
+    rclcpp::spin_some(client_node_);
+  }
+
+  EXPECT_GE(state_subscriber_->count(), 30);
+  EXPECT_GE(distance_subscriber_->count(), 30);
+
+  // Position in reference is the target position.
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  reference.positions = { 1.0 };
+  reference.velocities = { 0.0 };
+  reference.accelerations = { 0.0 };
+
+  // Feedback is the current value.
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+  feedback.positions = { 0.96 };
+  feedback.velocities = { 0.0 };
+  feedback.effort = { 0.0 };
+
+  // Error is the difference between reference and feedback.
+  trajectory_msgs::msg::JointTrajectoryPoint error;
+  error.positions = { 0.04 };
+  error.velocities = { 0.0 };
+
+  CheckStateMsg(state_subscriber_->last_msg(), reference, feedback, error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.96), kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
@@ -576,35 +702,92 @@ TEST_F(GripperControllerTest, FollowTrajectoryAction) {
 }
 
 TEST_F(GripperControllerTest, GraspAction) {
-  // Match current force and target force to ensure action success
-  hardware_->effort->set_current(3.0);
+  auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
+  ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
+
+  // Set current force and target force to be close for successful action.
+  hardware_->effort->set_current(2.5);
   hardware_->grasping_flag->set_current(false);
+
+  // Verify the values of controller_state and fingertip_distance before receiving action.
+  rclcpp::WallRate rate(100.0);
+  while ((state_subscriber_->count() == 0) ||
+         (distance_subscriber_->count() == 0)) {
+    SpinOnce(rate);
+  }
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_reference;
+  start_reference.positions = { 0.0 };
+  start_reference.velocities = { 0.0 };
+  start_reference.effort = { 2.5 };
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_error;
+  start_error.positions = { 0.0 };
+  start_error.velocities = { 0.0 };
+  start_error.effort = { 0.0 };
+
+  // Reference is set to the current value.
+  // Reference and feedback are set to the same value.
+  CheckStateMsg(state_subscriber_->last_msg(), start_reference, start_reference, start_error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.0), kEpsilon);
 
   ApplayEffortAction::Goal goal;
   goal.effort = 3.0;
   auto future_goal_handle = grasp_action_client_->async_send_goal(goal);
 
-  rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
   while (rclcpp::ok()) {
     SpinOnce(rate);
-    // Break at grasp start
+    // Break at gripping start.
     if (hardware_->grasping_flag->bool_command()) {
       EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
       break;
     }
   }
-  // Grasping
+
+  // Gripping in progress.
   hardware_->grasping_flag->set_current(true);
   SpinOnce(rate);
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // Grasp complete
+  // Gripping completed.
   hardware_->grasping_flag->set_current(false);
-  SpinOnce(rate);
+
+  // Retrieve the values of controller_state and fingertip_distance again.
+  const uint32_t start_state_cnt = state_subscriber_->count();
+  const uint32_t start_distance_cnt = distance_subscriber_->count();
+  while ((state_subscriber_->count() <= start_state_cnt) ||
+         (distance_subscriber_->count() <= start_distance_cnt)) {
+    SpinOnce(rate);
+  }
+
+  // Should be able to subscribe 3 times with SpinOnce and WaitFor.
+  EXPECT_GE(state_subscriber_->count(), 3);
+  EXPECT_GE(distance_subscriber_->count(), 3);
+
+  // Position in reference is the current position, effort is the command torque.
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  reference.positions = { 0.0 };
+  reference.effort = { 3.0 };
+
+  // Feedback is the current value.
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+  feedback.positions = { 0.0 };
+  feedback.velocities = { 0.0 };
+  feedback.effort = { 2.5 };
+
+  // Error is the difference between reference and feedback.
+  trajectory_msgs::msg::JointTrajectoryPoint error;
+  error.positions = { 0.0 };
+  error.effort = { 0.5 };
+
+  CheckStateMsg(state_subscriber_->last_msg(), reference, feedback, error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, distance_calculator->GetDistanceFromPosition(0.0), kEpsilon);
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
@@ -618,18 +801,41 @@ TEST_F(GripperControllerTest, GraspAction) {
 }
 
 TEST_F(GripperControllerTest, SetDistanceAction) {
-  auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+  auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
   ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
-  // Assume the target position temporarily to zero the integral of the difference
-  hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.05));
+  // Temporarily assume it is at the target position to set the accumulation of differences to zero.
+  double start_position = distance_calculator->GetPositionFromDistance(0.05);
+  hardware_->position->set_current(start_position);
+
+  // Verify the values of controller_state and fingertip_distance before receiving action.
+  rclcpp::WallRate rate(100.0);
+  while ((state_subscriber_->count() == 0) ||
+         (distance_subscriber_->count() == 0)) {
+    SpinOnce(rate);
+  }
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_reference;
+  start_reference.positions = { start_position };
+  start_reference.velocities = { 0.0 };
+  start_reference.effort = { 0.0 };
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_error;
+  start_error.positions = { 0.0 };
+  start_error.velocities = { 0.0 };
+  start_error.effort = { 0.0 };
+
+  // Reference is set to the current value.
+  // Reference and feedback are set to the same value.
+  CheckStateMsg(state_subscriber_->last_msg(), start_reference, start_reference, start_error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, 0.05, kEpsilon);
 
   SetDistanceAction::Goal goal;
   goal.distance = 0.05;
 
   auto future_goal_handle = set_distance_action_client_->async_send_goal(goal);
 
-  rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1050));
@@ -644,35 +850,114 @@ TEST_F(GripperControllerTest, SetDistanceAction) {
   EXPECT_TRUE((WaitForStatus<SetDistanceAction, rclcpp::Node::SharedPtr>(
     controller_, { client_node_ }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Derived from gain and difference
-  EXPECT_NEAR(hardware_->position->command(),
-              (current_position + 2.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002),
-              kEpsilon);
+  // Derived from gain and difference.
+  double command_value = current_position + 2.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002;
+  EXPECT_NEAR(hardware_->position->command(), command_value, kEpsilon);
 
   EXPECT_DOUBLE_EQ(hardware_->drive_mode->command(), tmc_exxx_servo_motor_protocol::kDriveModeHandPosition);
+
+  // Retrieve the values of controller_state and fingertip_distance again.
+  const uint32_t start_state_cnt = state_subscriber_->count();
+  const uint32_t start_distance_cnt = distance_subscriber_->count();
+  while ((state_subscriber_->count() <= start_state_cnt) ||
+         (distance_subscriber_->count() <= start_distance_cnt)) {
+    rclcpp::spin_some(client_node_);
+  }
+
+  // Should be able to subscribe 3 times with SpinOnce and WaitFor.
+  EXPECT_GE(state_subscriber_->count(), 3);
+  EXPECT_GE(distance_subscriber_->count(), 3);
+
+  // Position in reference is the current position, effort is the command torque.
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  reference.positions = { command_value };
+
+  // Feedback is the current value.
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+  feedback.positions = { current_position };
+  feedback.velocities = { 0.04 };
+  feedback.effort = { 0.0 };
+
+  // Error is the difference between reference and feedback.
+  trajectory_msgs::msg::JointTrajectoryPoint error;
+  error.positions = { command_value - current_position };
+
+  CheckStateMsg(state_subscriber_->last_msg(), reference, feedback, error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, 0.052, kEpsilon);
 }
 
 TEST_F(GripperControllerTest, FollowDistanceTrajectoryAction) {
-  auto distance_calculator = std::make_shared<HrhGripperSetDistanceCalculator>();
+  auto distance_calculator = std::make_shared<HrhGripperDistanceCalculator>();
   ASSERT_TRUE(distance_calculator->InitializeHandSizeData(controller_node_));
 
-  hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.05));
+  double start_position = distance_calculator->GetPositionFromDistance(0.05);
+  hardware_->position->set_current(start_position);
+
+  // Verify the values of controller_state and fingertip_distance before receiving action.
+  rclcpp::WallRate rate(100.0);
+  while ((state_subscriber_->count() == 0) ||
+         (distance_subscriber_->count() == 0)) {
+    SpinOnce(rate);
+  }
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_reference;
+  start_reference.positions = { start_position };
+  start_reference.velocities = { 0.0 };
+  start_reference.effort = { 0.0 };
+
+  trajectory_msgs::msg::JointTrajectoryPoint start_error;
+  start_error.positions = { 0.0 };
+  start_error.velocities = { 0.0 };
+  start_error.effort = { 0.0 };
+
+  // Reference is set to the current value.
+  // Reference and feedback are set to the same value.
+  CheckStateMsg(state_subscriber_->last_msg(), start_reference, start_reference, start_error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, 0.05, kEpsilon);
 
   FollowTrajectoryAction::Goal goal;
   goal.trajectory = MakeDistanceTrajectory();
   auto future_goal_handle = follow_distance_trajectory_action_client_->async_send_goal(goal);
 
-  rclcpp::WallRate rate(100.0);
   WaitFor(rate, future_goal_handle);
 
   hardware_->position->set_current(distance_calculator->GetPositionFromDistance(0.1));
 
-  // Test trajectory moves to 0.1 in 0.5 seconds
+  const uint32_t start_state_cnt = state_subscriber_->count();
+  const uint32_t start_distance_cnt = distance_subscriber_->count();
+
+  // Test trajectory moves to 0.1 in 0.5 seconds.
   std::vector<double> command_distances;
   for (int i = 0; i < 60; ++i) {
     SpinOnce(rate);
     command_distances.push_back(distance_calculator->GetDistanceFromPosition(hardware_->position->command()));
   }
+
+  // Retrieve the values of controller_state and fingertip_distance again.
+  while ((state_subscriber_->count() <= start_state_cnt) ||
+         (distance_subscriber_->count() <= start_distance_cnt)) {
+    rclcpp::spin_some(client_node_);
+  }
+
+  // Position in reference is the current position, effort is the command torque.
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+  reference.positions = { distance_calculator->GetPositionFromDistance(0.1) };
+
+  // Feedback is the current value.
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+  feedback.positions = { distance_calculator->GetPositionFromDistance(0.1) };
+  feedback.velocities = { 0.0 };
+  feedback.effort = { 0.0 };
+
+  // Error is the difference between reference and feedback.
+  trajectory_msgs::msg::JointTrajectoryPoint error;
+  error.positions = { 0.0 };
+
+  CheckStateMsg(state_subscriber_->last_msg(), reference, feedback, error, { kHandJointName });
+
+  EXPECT_NEAR(distance_subscriber_->last_msg().data, 0.1, kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());

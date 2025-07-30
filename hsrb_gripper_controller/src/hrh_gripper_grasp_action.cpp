@@ -46,10 +46,10 @@ namespace hsrb_gripper_controller {
 
 HrhGripperGraspAction::HrhGripperGraspAction(HrhGripperController* controller)
     : HrhGripperAction(controller, "~/grasp", tmc_exxx_servo_motor_protocol::kDriveModeHandGrasp),
-      goal_tolerance_(kDefaultTorqueGoalTolerance),
-      is_sent_start_grasping_(false) {}
+      is_sent_start_grasping_(false),
+      goal_tolerance_(kDefaultTorqueGoalTolerance) {}
 
-/// Periodic update processing
+/// Periodic update process
 void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
   if (!IsActive()) {
     return;
@@ -59,15 +59,15 @@ void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
     std::lock_guard<std::mutex> guard(mutex_);
     bool start_grasping_flag;
     if (grasping_flag) {
-      // Grip start flag already ON
+      // Grip initiation flag already set to ON
       start_grasping_flag = false;
       is_sent_start_grasping_ = true;
     } else {
       if (is_sent_start_grasping_) {
-        // Grip start flag sent and grip completed
+        // Grip initiation flag sent and grip completed
         start_grasping_flag = false;
       } else {
-        // Grip start flag not yet sent
+        // Haven't sent the grip initiation flag yet
         start_grasping_flag = true;
       }
     }
@@ -76,13 +76,32 @@ void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
   CheckForSuccess();
 }
 
-/// Implementation for action initialization
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperGraspAction::GetReferenceState() {
+  trajectory_msgs::msg::JointTrajectoryPoint reference;
+
+  reference.positions = { controller_->GetCurrentPosition() };
+  reference.effort = { command_torque_ };
+
+  return reference;
+}
+
+trajectory_msgs::msg::JointTrajectoryPoint HrhGripperGraspAction::GetFeedbackState() {
+  trajectory_msgs::msg::JointTrajectoryPoint feedback;
+
+  feedback.positions = { controller_->GetCurrentPosition() };
+  feedback.velocities = { controller_->GetCurrentVelocity() };
+  feedback.effort = { controller_->GetCurrentTorque() };
+
+  return feedback;
+}
+
+/// Implementation of action initialization
 bool HrhGripperGraspAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   goal_tolerance_ = GetPositiveParameter(node, "torque_goal_tolerance", kDefaultTorqueGoalTolerance);
   return true;
 }
 
-/// Update action target
+/// Update action goals
 void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) {
   std::lock_guard<std::mutex> guard(mutex_);
   command_torque_ = goal.effort;
@@ -91,9 +110,9 @@ void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::Gri
 
 void HrhGripperGraspAction::CheckForSuccess() {
   bool grasping_flag = controller_->GetCurrentGraspingFlag();
-  // Setting the grip start flag on the control table initiates gripping,
-  // Flag is reset upon stall (command and status confirmation fields are identical)
-  // If the grip start flag is sent and the current grip flag is reset, the grip is completed.
+  // Setting the grip initiation flag on the control table starts gripping,
+  // The flag resets upon stalling (command and status confirmation fields are identical)
+  // If the grip initiation flag is sent and the current grip flag is reset, gripping is complete.
   bool has_completed;
   {
     std::lock_guard<std::mutex> guard(mutex_);
@@ -104,7 +123,7 @@ void HrhGripperGraspAction::CheckForSuccess() {
     result->stalled = true;
     result->effort = controller_->GetCurrentTorque();
 
-    // Compare command value and current value when stalled to equilibrium
+    // Compare command values and current values when a stall occurs and equilibrium is achieved
     bool is_succeeded;
     {
       std::lock_guard<std::mutex> guard(mutex_);

@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_joint_controller.hpp
-/// @brief Omni-directional Cart Joint Controller Class
+/// @brief Omnidirectional Cart Joint Controller Class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_JOINT_CONTROLLER_HPP_
 
@@ -51,9 +51,9 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Rotation Axis Speed and Wheel Speed Limits
+/// Limits for Swivel Axis Speed and Wheel Speed
 struct VelocityLimit {
-  // Rotation Axis Speed Limit [rad/s]
+  // Swivel Axis Speed Limit [rad/s]
   double yaw_limit;
   // Wheel Speed Limit [rad/s]
   double wheel_limit;
@@ -75,13 +75,13 @@ class OmniBaseJointControllerBase {
   std::vector<std::string> state_interface_names() const;
   bool Activate(std::vector<hardware_interface::LoanedCommandInterface>& command_interfaces,
                 std::vector<hardware_interface::LoanedStateInterface>& state_interfaces);
-  // Compute Command Values
+  // Calculate Command Values
   void SetJointCommand(double period, const Eigen::Vector3d output_velocity);
   // Get Axis Position
   bool GetJointPositions(Eigen::Vector3d& positions_out) const;
   // Get Axis Speed
   bool GetJointVelocities(Eigen::Vector3d& velocities_out) const;
-  // Reset Target Position for Rotation Axis
+  // Reset Target Position for Swivel Axis
   virtual void ResetDesiredSteerPosition() = 0;
 
   // Accessor
@@ -106,16 +106,16 @@ class OmniBaseJointControllerBase {
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_position_interfaces_;
   InterfaceReferences<hardware_interface::LoanedStateInterface> current_velocity_interfaces_;
 
-  // Target Position for the Rotation Axis
+  // Target Position for Swivel Axis
   double desired_steer_pos_;
 
  private:
-  // Controller's Node Handle
+  // Node Handle for Controller
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   // Names of Each Axis
   std::vector<std::string> joint_names_;
 
-  // Dimensional Information of the Cart
+  // Dimension Information of the Cart
   OmniBaseSize omnibase_size_;
   // Kinematic Model of the Cart
   TwinCasterDrive::Ptr twin_drive_;
@@ -127,7 +127,7 @@ class OmniBaseJointControllerBase {
   std::vector<Filter<> > velocity_filters_;
 };
 
-// Controller Performing Position Command for the Rotation Axis
+// Controller for Position Command of Swivel Axis
 class OmniBaseJointControllerBaseRollPosition : public OmniBaseJointControllerBase {
  public:
   explicit OmniBaseJointControllerBaseRollPosition(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
@@ -136,7 +136,7 @@ class OmniBaseJointControllerBaseRollPosition : public OmniBaseJointControllerBa
 
   std::vector<std::string> command_interface_names() const override;
 
-  // Reset Target Position for Rotation Axis
+  // Reset Target Position for Swivel Axis
   void ResetDesiredSteerPosition() override {
     desired_steer_pos_ = current_position_interfaces_[kJointIDSteer].get().get_value();
   }
@@ -145,7 +145,7 @@ class OmniBaseJointControllerBaseRollPosition : public OmniBaseJointControllerBa
   void SetCommandToCommandInterface(double period) override;
 };
 
-// Controller Performing Speed Command for the Rotation Axis
+// Controller for Speed Command of Swivel Axis
 class OmniBaseJointControllerBaseRollVelocity : public OmniBaseJointControllerBase {
  public:
   explicit OmniBaseJointControllerBaseRollVelocity(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node)
@@ -154,7 +154,7 @@ class OmniBaseJointControllerBaseRollVelocity : public OmniBaseJointControllerBa
 
   std::vector<std::string> command_interface_names() const override;
 
-  // Reset Target Position for Rotation Axis
+  // Reset Target Position for Swivel Axis
   void ResetDesiredSteerPosition() override {}
 
  protected:

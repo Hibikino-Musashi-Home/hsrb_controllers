@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test Hrh grip control action
+/// @brief Test for Hrh grip control action
 
 #include <gtest/gtest.h>
 
@@ -74,7 +74,7 @@ TEST_F(ApplyForceActionTest, ActionSucceeded) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Since do_control_stop is false, continue updating position after action completion
+  // Since do_control_stop is false, position continues to update even after action completion
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   EXPECT_GT(std::abs(hardware_->position->command() - last_command), kEpsilon);
 }
@@ -105,7 +105,7 @@ TEST_F(ApplyForceActionTest, ControlStopAfterCompletion) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Since do_control_stop is true, do not update position after action completion
+  // Since do_control_stop is true, position does not update after action completion
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
@@ -158,7 +158,7 @@ TEST_F(ApplyForceActionTest, PreemptFromOutside) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // Stop update even if do_control_stop is false due to interruption
+  // Stop updating due to interruption even if do_control_stop is false
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
@@ -180,7 +180,7 @@ TEST_F(ApplyForceActionTest, CancelGoal) {
 
   const auto last_command = hardware_->position->command();
 
-  // Throw a cancellation
+  // Throw a cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -192,7 +192,7 @@ TEST_F(ApplyForceActionTest, CancelGoal) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // Stop update even if do_control_stop is false due to interruption
+  // Stop updating due to interruption even if do_control_stop is false
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   EXPECT_DOUBLE_EQ(hardware_->position->command(), last_command);
 }
@@ -279,7 +279,7 @@ TEST_F(ApplyForceActionTest, StallTimeout) {
   EXPECT_FALSE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED)));
 
-  // Since WaitForStatus waits for 1 second, just wait for the rest
+  // Wait for the remaining time since WaitForStatus waits for 1 second
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
@@ -371,7 +371,7 @@ TEST_F(ApplyForceActionTest, ForceIerrMax) {
 
   EXPECT_NEAR(hardware_->position->command(), 0.2 * -0.15, kEpsilon);
 
-  // End with cancellation
+  // End with cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -416,8 +416,8 @@ TEST_F(ApplyForceActionTest, ForceCalibDataPath) {
   hardware_->spring_r_position->set_current(5.0);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Just check that there is a change and command value when there is no calibration result
-  // Test whether calibration results are correctly reflected is hrh_gripper_controller_apply_force_calculator-test.cpp
+  // Only check the change in command value when there is no calibration result
+  // Test whether calibration results are correctly reflected can be found in hrh_gripper_controller_apply_force_calculator-test.cpp
   EXPECT_GT(std::abs(hardware_->position->command() - 0.1 * -0.05 + 0.15 * -0.05 + 0.4 * 1.0), kEpsilon);
 }
 

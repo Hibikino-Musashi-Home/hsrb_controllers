@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_odometry-test.cpp
-/// @brief Test class for omnidirectional cart odometry
+/// @brief Test for omnidirectional carriage odometry class
 
 #include <gtest/gtest.h>
 
@@ -82,15 +82,15 @@ void BaseOdometryTest::SetUp() {
   }
 }
 
-/// Update odometry using external odometry
+/// Update odometry with external odometry
 TEST_F(BaseOdometryTest, UpdateBaseOdometry) {
-  // Cart odometry
+  // Carriage odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 10.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 20.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Cart speed
+  // Carriage speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
@@ -102,13 +102,13 @@ TEST_F(BaseOdometryTest, InitOdometry) {
   odom_->InitOdometry();
   odom_->UpdateOdometry(0.0, Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 2.0, 3.0));
 
-  // Cart odometry
+  // Carriage odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Cart speed
+  // Carriage speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
@@ -141,15 +141,15 @@ void WheelOdometryTest::SetUp() {
   odom_->UpdateOdometry(0.1, Eigen::Vector3d(1.0, 2.0, 3.0), Eigen::Vector3d(-1.0, -2.0, -3.0));
 }
 
-/// Odometry can be updated and retrieved
+/// You can update and obtain the odometry
 TEST_F(WheelOdometryTest, UpdateWheelOdometry) {
-  // Cart odometry
+  // Carriage odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_NEAR(odom(kIndexBaseX), 0.00573091, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseY), -0.00239658, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseTheta), 0.0150376, kEpsilon);
 
-  // Cart speed
+  // Carriage speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_NEAR(vel(kIndexBaseX), 0.0570652, kEpsilon);
   EXPECT_NEAR(vel(kIndexBaseY), -0.024843, kEpsilon);

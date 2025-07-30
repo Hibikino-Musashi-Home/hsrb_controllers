@@ -2,6 +2,11 @@
 Changelog for package hsrb_base_controllers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+2.3.0 (2025-07-29)
+-------------------
+* Add controller state topic
+* Contributors: Shigeo Tsuduki
+
 2.2.0 (2025-04-22)
 -------------------
 * Fix hsrb_diag to be available in hsre4p

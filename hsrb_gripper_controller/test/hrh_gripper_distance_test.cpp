@@ -1,22 +1,17 @@
 /*
-Copyright (c) 2019 TOYOTA MOTOR CORPORATION
+Copyright (c) 2025 TOYOTA MOTOR CORPORATION
 All rights reserved.
-
 Redistribution and use in source and binary forms, with or without
 modification, are permitted (subject to the limitations in the disclaimer
 below) provided that the following conditions are met:
-
 * Redistributions of source code must retain the above copyright notice, this
   list of conditions and the following disclaimer.
-
 * Redistributions in binary form must reproduce the above copyright notice,
   this list of conditions and the following disclaimer in the documentation
   and/or other materials provided with the distribution.
-
 * Neither the name of the copyright holder nor the names of its contributors may be used
   to endorse or promote products derived from this software without specific
   prior written permission.
-
 NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS
 LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -30,74 +25,73 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @file omni_base_input_odometry-test.cpp
-/// @brief Test of external input odometry class
+/// @brief Test of the controller state
 
 #include <gtest/gtest.h>
 
-#include <hsrb_base_controllers/omni_base_input_odometry.hpp>
+#include <hsrb_gripper_controller/hrh_gripper_distance.hpp>
 
 #include "utils.hpp"
 
-namespace hsrb_base_controllers {
+namespace {
 
-/// Initialize odometry
-TEST(OmniBaseInputOdometryTest, InitOdometry) {
+}  // namespace
+
+namespace hsrb_gripper_controller {
+
+// Correctly published with StatePublisher
+TEST(DistancePublisherTest, Publish) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();
-  auto odom = InputOdometry(node);
+  node->declare_parameter("distance_publish_rate", 2.0);
+  node->declare_parameter("robot_description", ReadRobotDescriptionFromFile());
+  auto pub = std::make_shared<DistancePublisher>(node, "~/fingertip_distance");
   node->activate();
 
-  odom.InitOdometry();
+  auto client_node = rclcpp::Node::make_shared("client_node");
+  auto counter = std::make_shared<SubscriptionCounter<std_msgs::msg::Float32>>(
+      client_node, "test_node/fingertip_distance");
+  pub->SetLastStatePublishedTime(node->now());
 
-  auto output = odom.GetOdometry();
-  EXPECT_EQ(output.header.stamp, rclcpp::Time(0));
-  EXPECT_EQ(output.pose.pose.position.x, 0.0);
-  EXPECT_EQ(output.pose.pose.position.y, 0.0);
-  EXPECT_EQ(output.pose.pose.position.z, 0.0);
-  EXPECT_EQ(output.pose.pose.orientation.x, 0.0);
-  EXPECT_EQ(output.pose.pose.orientation.y, 0.0);
-  EXPECT_EQ(output.pose.pose.orientation.z, 0.0);
-  EXPECT_EQ(output.pose.pose.orientation.w, 1.0);
-}
-
-/// Get current odometry
-TEST(OmniBaseInputOdometryTest, GetOdometry) {
-  auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
-  node->configure();
-  auto odom = InputOdometry(node);
-  auto publisher = node->create_publisher<nav_msgs::msg::Odometry>(
-      "odom", rclcpp::SystemDefaultsQoS());
-  node->activate();
-
-  nav_msgs::msg::Odometry msg;
-  msg.header.stamp = node->now();
-  msg.pose.pose.position.x = 1.0;
-  msg.pose.pose.position.y = 2.0;
-  msg.pose.pose.position.z = 3.0;
-  msg.pose.pose.orientation.x = 4.0;
-  msg.pose.pose.orientation.y = 5.0;
-  msg.pose.pose.orientation.z = 6.0;
-  msg.pose.pose.orientation.w = 7.0;
-
-  publisher->publish(msg);
-  auto timeout = TimeoutDetection(node->get_clock());
-  while (odom.GetOdometry().header.stamp == rclcpp::Time(0)) {
-    timeout.Run();
+  rclcpp::WallRate loop_rate(10.0);
+  for (uint32_t i = 0; i < 12; ++i) {
+    pub->Publish(1.0, node->now());
+    rclcpp::spin_some(client_node);
     rclcpp::spin_some(node->get_node_base_interface());
+    loop_rate.sleep();
   }
+  EXPECT_EQ(counter->count(), 2);
 
-  auto output = odom.GetOdometry();
-  EXPECT_EQ(output.pose.pose.position.x, 1.0);
-  EXPECT_EQ(output.pose.pose.position.y, 2.0);
-  EXPECT_EQ(output.pose.pose.position.z, 3.0);
-  EXPECT_EQ(output.pose.pose.orientation.x, 4.0);
-  EXPECT_EQ(output.pose.pose.orientation.y, 5.0);
-  EXPECT_EQ(output.pose.pose.orientation.z, 6.0);
-  EXPECT_EQ(output.pose.pose.orientation.w, 7.0);
+  auto msg = counter->last_msg();
+
+  EXPECT_NEAR(msg.data, 0.122194, kEpsilon);
 }
 
-}  // namespace hsrb_base_controllers
+// Correctly published with StatePublisher
+TEST(DistancePublisherTest, PublishRate) {
+  auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
+  node->configure();
+  node->declare_parameter("distance_publish_rate", 5.0);
+  node->declare_parameter("robot_description", ReadRobotDescriptionFromFile());
+  auto pub = std::make_shared<DistancePublisher>(node, "~/fingertip_distance");
+  node->activate();
+
+  auto client_node = rclcpp::Node::make_shared("client_node");
+  auto counter = std::make_shared<SubscriptionCounter<std_msgs::msg::Float32>>(
+      client_node, "test_node/fingertip_distance");
+  pub->SetLastStatePublishedTime(node->now());
+
+  rclcpp::WallRate loop_rate(10.0);
+  for (uint32_t i = 0; i < 12; ++i) {
+    pub->Publish(1.0, node->now());
+    rclcpp::spin_some(client_node);
+    rclcpp::spin_some(node->get_node_base_interface());
+    loop_rate.sleep();
+  }
+  EXPECT_EQ(counter->count(), 5);
+}
+
+}  // namespace hsrb_gripper_controller
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);

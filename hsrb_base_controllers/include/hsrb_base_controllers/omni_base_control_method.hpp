@@ -53,7 +53,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Interface class for cart control means
+/// Cart control method interface class
 class IBaseControlMethod : private boost::noncopyable {
  public:
   using Ptr = std::shared_ptr<IBaseControlMethod>;
@@ -64,7 +64,7 @@ class IBaseControlMethod : private boost::noncopyable {
 };
 
 
-/// Cart speed tracking
+/// Cart speed following
 class OmniBaseVelocityControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseVelocityControl>;
@@ -86,14 +86,14 @@ class OmniBaseVelocityControl : public IBaseControlMethod {
   std::mutex command_mutex_;
   // Command speed
   Eigen::Vector3d command_velocity_;
-  // Time when the last speed command was received
+  // Time when the last speed command value was received
   rclcpp::Time last_velocity_subscribed_time_;
-  // Speed command interruption judgment time
+  // Speed command value interruption determination time
   double command_timeout_;
 };
 
 
-/// Cart trajectory tracking
+/// Cart trajectory following
 class OmniBaseTrajectoryControl : public IBaseControlMethod {
  public:
   using Ptr = std::shared_ptr<OmniBaseTrajectoryControl>;
@@ -106,43 +106,43 @@ class OmniBaseTrajectoryControl : public IBaseControlMethod {
 
   // Get command speed
   Eigen::Vector3d GetOutputVelocity(const ControllerState& base_state);
-  // Update the trajectory being tracked, return true if a trajectory exists
+  // Update the trajectory being followed, return true if a trajectory exists
   bool UpdateActiveTrajectory();
-  // Get target state for trajectory tracking
+  // Get target state for trajectory following
   bool SampleDesiredState(const rclcpp::Time& time,
                           const std::vector<double>& current_positions,
                           const std::vector<double>& current_velocities,
                           trajectory_msgs::msg::JointTrajectoryPoint& desired_state,
                           bool& before_last_point,
                           double& time_from_point);
-  // Verify the input trajectory command
+  // Validate input trajectory command
   bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) const;
-  // Update the tracking trajectory
+  // Update the following trajectory
   void AcceptTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
                         const Eigen::Vector3d& base_positions);
-  // Terminate trajectory tracking if conditions are met
+  // Terminate trajectory following if conditions are met
   void TerminateControl(const rclcpp::Time& time, const ControllerState& base_state);
-  // Reset the currently tracked trajectory
+  // Reset the current trajectory being followed
   void ResetCurrentTrajectory();
 
  private:
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
 
-  // Feedback gain for control
+  // Feedback gain of control
   Eigen::Vector3d feedback_gain_;
-  // Names of the cart's coordinate axes
+  // Axis names of the cart
   std::vector<std::string> coordinate_names_;
-  // Speed threshold for determining trajectory tracking completion
+  // Speed threshold to determine completion of trajectory following
   double stop_velocity_threshold_;
-  // Whether to connect from the existing desired when a new trajectory comes
+  // Whether to connect from existing desired when a new trajectory comes
   // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
   // Last sampled state
   rclcpp::Time last_sampled_time_;
   trajectory_msgs::msg::JointTrajectoryPoint last_command_state_;
-  // Whether there is a value in last_command_state_
-  // It is correct to input the current value at activation like JointTrajectoryController
-  // Implement with flag management due to wide scope of changes
+  // Whether a value is present in last_command_state_
+  // It's correct to input current value when activating like JointTrajectoryController, but
+  // Implementation will be done with flag management due to wide change areas
   bool has_last_command_state_;
 
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_ = nullptr;

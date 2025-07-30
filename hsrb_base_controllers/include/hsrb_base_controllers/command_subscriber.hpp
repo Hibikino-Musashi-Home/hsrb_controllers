@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file command_subscriber.hpp
-/// @brief Omnidirectional cart control input command control class
+/// @brief Input command control class for omnidirectional cart control
 #ifndef HSRB_BASE_CONTROLLERS_COMMAND_SUBSCRIBER_HPP_
 #define HSRB_BASE_CONTROLLERS_COMMAND_SUBSCRIBER_HPP_
 
@@ -66,7 +66,7 @@ class CommandSubscriber : private boost::noncopyable {
   IControllerCommandInterface* controller_;
 };
 
-/// Input velocity command class
+/// Input speed command class
 class CommandVelocitySubscriber : public CommandSubscriber {
  public:
   using Ptr = std::shared_ptr<CommandVelocitySubscriber>;
@@ -76,10 +76,10 @@ class CommandVelocitySubscriber : public CommandSubscriber {
   virtual ~CommandVelocitySubscriber() {}
 
  private:
-  // Input command velocity callback
+  // Input command speed callback
   void CommandVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
-  // Input velocity subscriber
+  // Input speed subscriber
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr velocity_subscriber_;
 };
 
@@ -103,8 +103,8 @@ class CommandTrajectorySubscriber : public CommandSubscriber {
 
 /// Input trajectory action command class
 // TODO(Takeshita) toleranceの扱い周りがros1の頃より劣化しているので要検討
-//                 The cause is adhering to the implementation of follow_trajectory_controller
-//                 Not using velocity, ignoring tolerance of action goal
+//                 The reason is because it is aligned with the implementation of follow_trajectory_controller
+//                 Not using velocity, ignoring the action goal's tolerance
 class TrajectoryActionServer : public CommandSubscriber {
  public:
   using Ptr = std::shared_ptr<TrajectoryActionServer>;
@@ -114,11 +114,11 @@ class TrajectoryActionServer : public CommandSubscriber {
                          IControllerCommandInterface* controller);
   virtual ~TrajectoryActionServer() {}
 
-  // Updating action result
+  // Update the result of the action
   void UpdateActionResult(int32_t error_code);
   // Issue feedback
   void SetFeedback(const ControllerBaseState& state, const rclcpp::Time& stamp);
-  // Clear currently following goal
+  // Clear the currently following goal
   void PreemptActiveGoal();
 
  private:
@@ -126,7 +126,7 @@ class TrajectoryActionServer : public CommandSubscriber {
   double action_monitor_period_;
   // Cart joint name
   std::vector<std::string> cordinates_;
-  // GoalHandle of action
+  // Action's GoalHandle
   using RealtimeGoalHandle = realtime_tools::RealtimeServerGoalHandle<control_msgs::action::FollowJointTrajectory>;
   using RealtimeGoalHandlePtr = std::shared_ptr<RealtimeGoalHandle>;
   realtime_tools::RealtimeBuffer<RealtimeGoalHandlePtr> goal_handle_buffer_;
@@ -142,7 +142,7 @@ class TrajectoryActionServer : public CommandSubscriber {
   rclcpp_action::CancelResponse CancelCallback(const ServerGoalHandlePtr goal_handle);
   void FeedbackSetupCallback(ServerGoalHandlePtr goal_handle);
 
-  // Timer during action execution
+  // Timer for executing action
   rclcpp::TimerBase::SharedPtr goal_handle_timer_;
 };
 

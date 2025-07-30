@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test for Hrh grip control action
+/// @brief Test of Hrh grip control action
 
 #include <gtest/gtest.h>
 
@@ -65,7 +65,7 @@ TEST_F(FollowTrajectoryActionTest, ActionSucceeded) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined during the first update, so move the position near the target position after calling Update
+  // Since the trajectory is determined during the first update, move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_positions;
@@ -104,7 +104,7 @@ TEST_F(FollowTrajectoryActionTest, GoalToleranceViolated) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined during the first update, so move the position near the target position after calling Update
+  // Since the trajectory is determined during the first update, move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(1.06);
@@ -147,7 +147,7 @@ TEST_F(FollowTrajectoryActionTest, PreemptFromOutside) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // The state does not change due to the interruption
+  // State does not change due to an interruption
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
     rclcpp::spin_some(node_->get_node_base_interface());
@@ -185,7 +185,7 @@ TEST_F(FollowTrajectoryActionTest, CancelGoal) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // The state does not change due to the interruption
+  // State does not change due to an interruption
   for (int i = 0; i < 10; ++i) {
     rate.sleep();
     rclcpp::spin_some(node_->get_node_base_interface());
@@ -205,7 +205,7 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined during the first update, so move the position near the target position after calling Update
+  // Since the trajectory is determined during the first update, move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(1.06);
@@ -234,7 +234,7 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTimeTolerance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined during the first update, so move the position near the target position after calling Update
+  // Since the trajectory is determined during the first update, move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   hardware_->position->set_current(1.06);
@@ -246,7 +246,7 @@ TEST_F(FollowTrajectoryActionTest, PositionGoalTimeTolerance) {
     controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
   }
 
-  // Although Update has not been called after exceeding goal_time_tolerance, STATUS_ABORTED occurs in humble.
+  // Update was not called after exceeding goal_time_tolerance, but in humble it becomes STATUS_ABORTED.
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
@@ -402,7 +402,7 @@ TEST_F(FollowTrajectoryActionTest, WithoutOpenLoopControl) {
     command_positions.push_back(hardware_->position->command());
   }
 
-  // A behavior where values monotonically increase from the current value (0.5), and then increase from the current value again halfway through
+  // The behavior is monotonic increase from the current value (0.5) and then increase again from the current value midway
   uint32_t command_jumping = 0;
   double previous_command = 0.5;
   for (double command : command_positions) {
@@ -414,9 +414,9 @@ TEST_F(FollowTrajectoryActionTest, WithoutOpenLoopControl) {
   }
   EXPECT_EQ(command_jumping, 1);
 
-  // At 1 rad/sec with 100 Hz over 10 frames, the expectation is 0.1; if the loop is unstable, provide an appropriate buffer.
+  // Expectation is 0.1 for 10 frames at 1 rad/sec with 100Hz, and may deviate if the loop is unstable, so allow some buffer
   EXPECT_NEAR(command_positions[15] - command_positions[5], 0.1, 0.1);
-  // The speed should remain the same in the latter half
+  // The speed should be the same in the second half
   EXPECT_NEAR(command_positions[50] - command_positions[40], 0.1, 0.1);
 }
 
@@ -449,23 +449,23 @@ TEST_F(FollowTrajectoryActionTest, WithOpenLoopControl) {
     command_positions.push_back(hardware_->position->command());
   }
 
-  // Values should continue to monotonically increase from the current value (0.5), but the speed should change around the 25th
+  // Continues to increase monotonically from the current value (0.5), but the speed should change at the 25th step
   double previous_command = 0.5;
   for (double command : command_positions) {
     EXPECT_LE(command, 1.0);
     EXPECT_GE(command, previous_command);
     previous_command = command;
   }
-  // At 1 rad/sec with 100 Hz over 10 frames, the expectation is 0.1; if the loop is unstable, provide an appropriate buffer.
+  // Expectation is 0.1 for 10 frames at 1 rad/sec with 100Hz, and may deviate if the loop is unstable, so allow some buffer
   EXPECT_NEAR(command_positions[15] - command_positions[5], 0.1, 0.1);
-  // Speed should be halved in the latter half
+  // The speed should be halved in the second half
   EXPECT_NEAR(command_positions[50] - command_positions[40], 0.05, 0.05);
 
-  // Create a client first to shorten testing time so that wait_for completes quickly
+  // Create a client in advance to shorten the test time so that wait_for completes quickly
   auto apply_force_client = rclcpp_action::create_client<tmc_control_msgs::action::GripperApplyEffort>(
       node_, std::string(kControllerNodeName) + "/apply_force");
 
-  // If in the same control mode, it connects from the last command value
+  // Connects from the last command value if in the same control mode
   const auto another_trajectory = MakeTrajectory(1.2);
   publisher->publish(another_trajectory);
 
@@ -476,7 +476,7 @@ TEST_F(FollowTrajectoryActionTest, WithOpenLoopControl) {
     controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
     command_positions.push_back(hardware_->position->command());
   }
-  // Monotonically increasing from the last command value 1.0
+  // Monotonously increases from the last command value 1.0
   previous_command = 1.0;
   for (double command : command_positions) {
     EXPECT_LE(command, 1.2);
@@ -484,7 +484,7 @@ TEST_F(FollowTrajectoryActionTest, WithOpenLoopControl) {
     previous_command = command;
   }
 
-  // When switching to another control mode, retained values are reset and connect from current
+  // When switching to another control mode, the stored value is reset and connects from the current
   apply_force_client->wait_for_action_server();
   auto apply_force_goal = tmc_control_msgs::action::GripperApplyEffort::Goal();
   apply_force_goal.effort = 1.0;
@@ -500,7 +500,7 @@ TEST_F(FollowTrajectoryActionTest, WithOpenLoopControl) {
     controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
     command_positions.push_back(hardware_->position->command());
   }
-  // Monotonically increasing from the current value (0.5)
+  // Monotonously increases from the current value (0.5)
   previous_command = 0.5;
   for (double command : command_positions) {
     EXPECT_LE(command, 1.0);
