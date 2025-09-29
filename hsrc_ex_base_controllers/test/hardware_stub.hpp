@@ -1,0 +1,126 @@
+/// @brief テストのためのハードウェアを模擬するHandle
+/// @copyright Copyright (C) 2022 Toyota Motor Corporation
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <hardware_interface/types/hardware_interface_type_values.hpp>
+
+namespace hsrc_ex_base_controllers {
+
+class Handle {
+ public:
+  explicit Handle(const std::string& name)
+      : command_(0.0), current_pos_(0.0), current_vel_(0.0),
+        state_position_handle_(name, hardware_interface::HW_IF_POSITION, &current_pos_),
+        state_velocity_handle_(name, hardware_interface::HW_IF_VELOCITY, &current_vel_) {}
+  virtual ~Handle() = default;
+
+  hardware_interface::LoanedStateInterface GetPositionStateInterface() {
+    return hardware_interface::LoanedStateInterface(state_position_handle_);
+  }
+  hardware_interface::LoanedStateInterface GetVelocityStateInterface() {
+    return hardware_interface::LoanedStateInterface(state_velocity_handle_);
+  }
+
+  virtual void Update() = 0;
+
+  double command() const { return command_; }
+  void set_current_pos(double x) { current_pos_ = x; }
+  void set_current_vel(double x) { current_vel_ = x; }
+
+ protected:
+  double command_;
+  double current_pos_;
+  double current_vel_;
+
+ private:
+  hardware_interface::StateInterface state_position_handle_;
+  hardware_interface::StateInterface state_velocity_handle_;
+};
+
+class CommandPositionHandle : public Handle {
+ public:
+  using Ptr = std::shared_ptr<CommandPositionHandle>;
+
+  explicit CommandPositionHandle(const std::string& name, double update_frequency)
+      : Handle(name), command_position_handle_(name, hardware_interface::HW_IF_POSITION, &command_),
+        update_frequency_(update_frequency) {}
+  virtual ~CommandPositionHandle() = default;
+
+  hardware_interface::LoanedCommandInterface GetCommandInterface() {
+    return hardware_interface::LoanedCommandInterface(command_position_handle_);
+  }
+
+  void Update() override {
+    current_vel_ = (command_ - current_pos_) * update_frequency_;
+    current_pos_ = command_;
+  }
+
+ private:
+  hardware_interface::CommandInterface command_position_handle_;
+  double update_frequency_;
+};
+
+class CommandVelocityHandle : public Handle {
+ public:
+  using Ptr = std::shared_ptr<CommandVelocityHandle>;
+
+  CommandVelocityHandle(const std::string& name, double update_frequency)
+      : Handle(name), command_velocity_handle_(name, hardware_interface::HW_IF_VELOCITY, &command_),
+        update_frequency_(update_frequency) {}
+
+  virtual ~CommandVelocityHandle() = default;
+
+  hardware_interface::LoanedCommandInterface GetCommandInterface() {
+    return hardware_interface::LoanedCommandInterface(command_velocity_handle_);
+  }
+
+  void Update() override {
+    current_pos_ += current_vel_ / update_frequency_;
+    current_vel_ = command_;
+  }
+
+ private:
+  hardware_interface::CommandInterface command_velocity_handle_;
+  double update_frequency_;
+};
+
+template<typename SteerCommandHandleType>
+struct HardwareStub {
+  using Ptr = std::shared_ptr<HardwareStub>;
+
+  typename SteerCommandHandleType::Ptr steer_handle;
+  CommandVelocityHandle::Ptr l_wheel_handle;
+  CommandVelocityHandle::Ptr r_wheel_handle;
+
+  std::vector<hardware_interface::LoanedCommandInterface> command_interfaces;
+  std::vector<hardware_interface::LoanedStateInterface> state_interfaces;
+
+  explicit HardwareStub(double update_frequency) {
+    steer_handle = std::make_shared<SteerCommandHandleType>("base_roll_joint", update_frequency);
+    l_wheel_handle = std::make_shared<CommandVelocityHandle>("base_l_drive_wheel_joint", update_frequency);
+    r_wheel_handle = std::make_shared<CommandVelocityHandle>("base_r_drive_wheel_joint", update_frequency);
+
+    command_interfaces.emplace_back(steer_handle->GetCommandInterface());
+    command_interfaces.emplace_back(l_wheel_handle->GetCommandInterface());
+    command_interfaces.emplace_back(r_wheel_handle->GetCommandInterface());
+
+    state_interfaces.emplace_back(steer_handle->GetPositionStateInterface());
+    state_interfaces.emplace_back(steer_handle->GetVelocityStateInterface());
+    state_interfaces.emplace_back(l_wheel_handle->GetPositionStateInterface());
+    state_interfaces.emplace_back(l_wheel_handle->GetVelocityStateInterface());
+    state_interfaces.emplace_back(r_wheel_handle->GetPositionStateInterface());
+    state_interfaces.emplace_back(r_wheel_handle->GetVelocityStateInterface());
+  }
+  HardwareStub() : HardwareStub(100.0) {}
+
+  void Update() {
+    steer_handle->Update();
+    l_wheel_handle->Update();
+    r_wheel_handle->Update();
+  }
+};
+
+}  // namespace hsrc_ex_base_controllers

@@ -1,0 +1,9 @@
+<library path="hsrc_ex_base_controllers">
+  <class name="hsrc_ex_base_controllers/OmniBaseController"
+         type="hsrc_ex_base_controllers::OmniBaseController"
+         base_class_type="controller_interface::ControllerInterface">
+     <description>
+       Ros controller plugin for omni-directional base control.
+     </description>
+  </class>
+</library>
