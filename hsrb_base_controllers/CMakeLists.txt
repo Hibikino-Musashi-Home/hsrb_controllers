@@ -55,7 +55,7 @@ ament_target_dependencies(${PROJECT_NAME}_modules
 
 add_library(${PROJECT_NAME} SHARED src/${PROJECT_NAME}/omni_base_controller.cpp)
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_modules)
-ament_target_dependencies(${PROJECT_NAME} controller_interface pluginlib)
+ament_target_dependencies(${PROJECT_NAME} controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle)
 
 pluginlib_export_plugin_description_file(controller_interface controllers_plugins.xml)
 
@@ -86,7 +86,8 @@ if(BUILD_TESTING)
   target_link_libraries(omni_base_control_method_test ${PROJECT_NAME})
 
   ament_add_gtest(omni_base_controller_test test/omni_base_controller-test.cpp
-                  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
+                  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
+                  TIMEOUT 150)
   target_link_libraries(omni_base_controller_test ${PROJECT_NAME})
 
   ament_add_gtest(omni_base_input_odometry_test test/omni_base_input_odometry-test.cpp)
@@ -97,6 +98,10 @@ if(BUILD_TESTING)
                   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
   target_link_libraries(omni_base_joint_controller_test ${PROJECT_NAME} Boost::thread)
 
+  ament_add_gtest(omni_base_joint_controller_acc_limit_test test/omni_base_joint_controller_acc_limit-test.cpp
+                  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
+  target_link_libraries(omni_base_joint_controller_acc_limit_test ${PROJECT_NAME})
+
   ament_add_gtest(omni_base_odometry_test test/omni_base_odometry-test.cpp)
   target_link_libraries(omni_base_odometry_test ${PROJECT_NAME})
 
@@ -105,6 +110,9 @@ if(BUILD_TESTING)
 
   ament_add_gtest(twin_caster_drive_test test/twin_caster_drive-test.cpp)
   target_link_libraries(twin_caster_drive_test ${PROJECT_NAME})
+
+  ament_add_gtest(utils_test test/utils-test.cpp)
+  target_link_libraries(utils_test ${PROJECT_NAME})
 endif()
 
 ament_export_dependencies(

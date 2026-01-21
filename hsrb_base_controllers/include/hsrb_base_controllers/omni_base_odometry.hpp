@@ -57,7 +57,7 @@ class Odometry {
   explicit Odometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   virtual ~Odometry() {}
 
-  // Update the odometry
+  // Update odometry
   virtual void UpdateOdometry(double period,
                               const Eigen::Vector3d& positions,
                               const Eigen::Vector3d& velocities) = 0;
@@ -67,9 +67,9 @@ class Odometry {
   Eigen::Vector3d velocity() const { return velocity_; }
 
  protected:
-  // Cart Odometry
+  // Cart odometry
   Eigen::Vector3d odometry_;
-  // Cart Speed
+  // Cart speed
   Eigen::Vector3d velocity_;
 };
 
@@ -81,11 +81,11 @@ class BaseOdometry : public Odometry {
   explicit BaseOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
   virtual ~BaseOdometry() {}
 
-  // Update the odometry
+  // Update odometry
   virtual void UpdateOdometry(double period,
                               const Eigen::Vector3d& positions,
                               const Eigen::Vector3d& velocities);
-  // Initialize the odometry data
+  // Initialize odometry data
   void InitOdometry();
 
  private:
@@ -100,9 +100,9 @@ class WheelOdometry : public Odometry {
 
   WheelOdometry(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const OmniBaseSize& omnibase_size);
   virtual ~WheelOdometry() {}
-  // Update the odometry
+  // Update odometry
   virtual void UpdateOdometry(double period, const Eigen::Vector3d& positions, const Eigen::Vector3d& velocities);
-  // Publish the odometry
+  // Publish odometry
   virtual void PublishOdometry(const rclcpp::Time& time);
 
   void set_last_odometry_published_time(const rclcpp::Time& time) {
@@ -117,30 +117,30 @@ class WheelOdometry : public Odometry {
   std::string tf_prefix_;
   std::string wheel_base_frame_;
   std::string wheel_odom_frame_;
-  // Omnidirectional Cart Model
+  // Omnidirectional cart model
   TwinCasterDrive::Ptr twin_drive_;
 
-  // Time when the odometry was last published
+  // Time when odometry was last published
   rclcpp::Time last_odometry_published_time_;
-  // Time when the odometry tf was last published
+  // Time when odometry tf was last published
   rclcpp::Time last_transform_published_time_;
 
-  // Odometry Publisher
+  // Odometry publisher
   using OdometryPublisher = realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>;
   using OdometryPublisherPtr = std::unique_ptr<OdometryPublisher>;
   OdometryPublisherPtr odometry_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_publisher_impl_;
 
-  // Odometry publishing interval
+  // Odometry publishing cycle
   rclcpp::Duration odometry_publish_period_;
 
-  // Odometry tf Publisher
+  // Odometry tf publisher
   using TFPublisher = realtime_tools::RealtimePublisher<tf2_msgs::msg::TFMessage>;
   using TFPublisherPtr = std::unique_ptr<TFPublisher>;
   TFPublisherPtr transform_publisher_;
   rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr transform_publisher_impl_;
 
-  // Odometry tf publishing interval
+  // Odometry tf publishing cycle
   rclcpp::Duration transform_publish_period_;
 };
 

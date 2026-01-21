@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_odometry-test.cpp
-/// @brief Test for omnidirectional carriage odometry class
+/// @brief Test of omnidirectional cart odometry class
 
 #include <gtest/gtest.h>
 
@@ -84,13 +84,13 @@ void BaseOdometryTest::SetUp() {
 
 /// Update odometry with external odometry
 TEST_F(BaseOdometryTest, UpdateBaseOdometry) {
-  // Carriage odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 10.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 20.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Carriage speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
@@ -102,13 +102,13 @@ TEST_F(BaseOdometryTest, InitOdometry) {
   odom_->InitOdometry();
   odom_->UpdateOdometry(0.0, Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 2.0, 3.0));
 
-  // Carriage odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_DOUBLE_EQ(odom(kIndexBaseX), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseY), 0.0);
   EXPECT_DOUBLE_EQ(odom(kIndexBaseTheta), 0.0);
 
-  // Carriage speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_DOUBLE_EQ(vel(kIndexBaseX), 1.0);
   EXPECT_DOUBLE_EQ(vel(kIndexBaseY), 2.0);
@@ -141,15 +141,15 @@ void WheelOdometryTest::SetUp() {
   odom_->UpdateOdometry(0.1, Eigen::Vector3d(1.0, 2.0, 3.0), Eigen::Vector3d(-1.0, -2.0, -3.0));
 }
 
-/// You can update and obtain the odometry
+/// Able to update and retrieve odometry
 TEST_F(WheelOdometryTest, UpdateWheelOdometry) {
-  // Carriage odometry
+  // Cart odometry
   Eigen::Vector3d odom = odom_->odometry();
   EXPECT_NEAR(odom(kIndexBaseX), 0.00573091, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseY), -0.00239658, kEpsilon);
   EXPECT_NEAR(odom(kIndexBaseTheta), 0.0150376, kEpsilon);
 
-  // Carriage speed
+  // Cart speed
   Eigen::Vector3d vel = odom_->velocity();
   EXPECT_NEAR(vel(kIndexBaseX), 0.0570652, kEpsilon);
   EXPECT_NEAR(vel(kIndexBaseY), -0.024843, kEpsilon);

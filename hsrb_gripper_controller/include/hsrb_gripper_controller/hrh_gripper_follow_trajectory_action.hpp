@@ -67,27 +67,27 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
   bool ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
   /// Update the action's target
   void UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// Get the current control target joint position
+  /// Get the current joint position of the control target
   /// @return Joint Position
   double GetPosition() const;
 
-  /// Default Allowable Error for Goal Position [rad]
+  /// Default goal position tolerance [rad]
   double default_goal_tolerance_;
-  /// Default Allowable Error for Goal Arrival Time [s]
+  /// Default goal arrival time tolerance [s]
   double default_goal_time_tolerance_;
 
-  // Whether to connect from the existing desired when a new orbit arrives
+  // Whether to connect from existing desired when a new trajectory arrives
   // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
-  /// Flag for whether to perform control with an output axis corrected for spring amount
+  /// Flag for whether to perform control with the output axis corrected for spring
   bool do_output_position_control_;
-  /// Lower limit of current when closing [A], if 0.0 or higher, no correction of command value due to overcurrent
+  /// Lower limit of current when closing [A], if 0.0 or more, no correction of command value due to overcurrent
   double current_min_;
-  /// Step width of correction value to increase (open) command value in case of overcurrent when closing
+  /// Incremental correction value to increase (open) command value during overcurrent when closing
   double position_correction_incresing_step_;
-  /// Step width to return (decrease) correction value when not in overcurrent, more stable if smaller than increasing
+  /// Incremental value to revert (decrease) correction value when not overcurrent, smaller than increasing is more stable
   double position_correction_decresing_step_;
-  /// Correction value to the command value
+  /// Correction value to command value
   double position_correction_value_;
 
   // Last sampled state
@@ -97,7 +97,7 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
   /// Callback when trajectory command arrives via topic
   /// @param [in] msg Trajectory
   void TrajectoryCommandCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
-  /// Trajectory Command Reception
+  /// Trajectory command reception
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
 
   /// Hold the trajectory
@@ -114,12 +114,12 @@ class HrhGripperFollowTrajectoryAction : public HrhGripperAction<control_msgs::a
     rclcpp::Time expected_arrival_time;
     /// Time to stop orbit following
     rclcpp::Time abort_time;
-    /// Allowable Error for Goal Arrival Time
+    /// Goal arrival time tolerance
     rclcpp::Time goal_time_tolerance;
-    /// Allowable Error for Goal Position
+    /// Goal position tolerance
     double goal_tolerance;
   };
-  /// Buffer for Goal Conditions
+  /// Buffer for goal conditions
   realtime_tools::RealtimeBuffer<GoalCondition> goal_condition_buffer_;
 };
 

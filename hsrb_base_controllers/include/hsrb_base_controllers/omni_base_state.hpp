@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state.hpp
-/// @brief Class for the status of an omnidirectional cart
+/// @brief Class for the state of an omnidirectional cart
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_STATE_HPP_
 
@@ -57,6 +57,7 @@ struct State {
 struct ControllerState {
   State actual;
   State desired;
+  State output;
   State error;
 
   virtual ~ControllerState() = default;
@@ -82,6 +83,9 @@ struct ControllerJointState : public ControllerState {
                        double desired_yaw_position,
                        const Eigen::Vector3d& desired_velocities);
 
+  ControllerJointState(const Eigen::Vector3d& actual_positions,
+                       const Eigen::Vector3d& actual_velocities);
+
   void UpdateError() override;
 };
 
@@ -90,6 +94,7 @@ void Convert(const ControllerState& in, const rclcpp::Time& stamp, const std::ve
 
 void Convert(const State& in, trajectory_msgs::msg::JointTrajectoryPoint& out);
 
+void ConvertVector(const Eigen::VectorXd& input_vector, std::vector<double>& dst_vector);
 
 class StatePublisher {
  public:

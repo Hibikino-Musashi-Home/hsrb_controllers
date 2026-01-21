@@ -73,7 +73,7 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
       const rclcpp_lifecycle::State& previous_state) override;
 
-  /// Returns whether the command is acceptable
+  /// Returns whether commands can be accepted
   bool IsAcceptable();
 
   /// Interrupts the active goal
@@ -93,7 +93,7 @@ class HrhGripperController : public controller_interface::ControllerInterface {
 
   std::string joint_name() const { return joint_name_; }
 
-  /// Change the control mode
+  /// Change control mode
   /// @param[in] mode Control mode
   void ChangeControlMode(std::shared_ptr<IHrhGripperAction> action);
 
@@ -102,19 +102,22 @@ class HrhGripperController : public controller_interface::ControllerInterface {
   bool IsActiveControlMode(std::shared_ptr<IHrhGripperAction> action) const { return action == active_action_; }
 
  protected:
-  // Initialization of parts other than ControllerInterface::init, for testing separation
+  // Initialization of parts other than ControllerInterface::init, split for testing
   bool InitImpl();
 
  private:
   /// Control mode command buffer
   realtime_tools::RealtimeBuffer<int32_t> command_control_mode_;
 
-  /// Target joint names
+  /// Target joint name
   std::string joint_name_;
 
-  /// Left and right finger joint names
+  /// Names of left and right finger joints
   std::string left_spring_joint_;
   std::string right_spring_joint_;
+
+  /// Specified namespace name
+  std::string gripper_namespace_;
 
   /// TODO(Takeshita) indexでなくポインタをもたせる？
   /// Interface index

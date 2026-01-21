@@ -33,7 +33,7 @@ DAMAGE.
 
 namespace {
 
-// Cart state publish frequency [Hz]
+// Cart status publish frequency [Hz]
 const double kDefaultStatePublishRate = 50.0;
 
 void CalculateError(const std::vector<double>& reference,

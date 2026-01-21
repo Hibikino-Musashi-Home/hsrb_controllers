@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file command_subscriber.cpp
-/// @brief Control class for input commands used in omnidirectional vehicle control
+/// @brief Input command control class for omnidirectional cart control
 #include <hsrb_base_controllers/command_subscriber.hpp>
 
 #include <rclcpp_action/create_server.hpp>
@@ -39,7 +39,7 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Default value for action state update frequency [Hz]
+// Default value of action state update frequency [Hz]
 constexpr double kDefaultActionMonitorRate = 100.0;
 }
 
@@ -51,18 +51,18 @@ CommandSubscriber::CommandSubscriber(const rclcpp_lifecycle::LifecycleNode::Shar
     : node_(node), controller_(controller) {}
 
 
-/// Initialization of the input velocity command class
+/// Initialization of input speed command class
 CommandVelocitySubscriber::CommandVelocitySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                      IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
-  // The QoS for diff_drive_controller is SystemDefaults, while for steering_controllers, it is mainly SensorDataQoS
-  // Considering the importance of obtaining the latest values in a timely manner, SensorDataQoS is adopted
+  // QoS of diff_drive_controller is SystemDefaults, steering_controllers is generally SensorDataQoS
+  // Adopt SensorDataQoS considering the importance of obtaining the latest values in a timely manner
   velocity_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
       "~/cmd_vel", rclcpp::SensorDataQoS(),
       std::bind(&CommandVelocitySubscriber::CommandVelocityCallback, this, std::placeholders::_1));
 }
 
-/// Input velocity command callback
+/// Input speed command callback
 void CommandVelocitySubscriber::CommandVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
   if (controller_->IsAcceptable()) {
     controller_->UpdateVelocity(msg);
@@ -72,13 +72,14 @@ void CommandVelocitySubscriber::CommandVelocityCallback(const geometry_msgs::msg
 }
 
 
-/// Initialization of the input trajectory command class
+/// Initialization of input trajectory command class
 CommandTrajectorySubscriber::CommandTrajectorySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
+                                                         const std::string& topic_name,
                                                          IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller) {
-  // Match the QoS for joint_trajectory_controller
+  // Match the QoS of joint_trajectory_controller
   trajectory_subscriber_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
-      "~/joint_trajectory", rclcpp::SensorDataQoS(),
+      topic_name, rclcpp::SensorDataQoS(),
       std::bind(&CommandTrajectorySubscriber::CommandTrajectoryCallback, this, std::placeholders::_1));
 }
 
@@ -90,14 +91,16 @@ void CommandTrajectorySubscriber::CommandTrajectoryCallback(
     return;
   }
   if (controller_->ValidateTrajectory(*msg)) {
+    controller_->PreemptActiveGoal();
     controller_->UpdateTrajectory(msg);
   }
 }
 
 
-/// Initialization of the input trajectory action command class
+/// Initialization of input trajectory action command class
 TrajectoryActionServer::TrajectoryActionServer(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                                const std::vector<std::string>& cordinates,
+                                               const std::string& server_name,
                                                IControllerCommandInterface* controller)
     : CommandSubscriber(node, controller), cordinates_(cordinates) {
   double action_monitor_rate = GetPositiveParameter(node, "action_monitor_rate", kDefaultActionMonitorRate);
@@ -106,7 +109,7 @@ TrajectoryActionServer::TrajectoryActionServer(const rclcpp_lifecycle::Lifecycle
   goal_handle_buffer_.writeFromNonRT(RealtimeGoalHandlePtr());
 
   action_server_ = rclcpp_action::create_server<control_msgs::action::FollowJointTrajectory>(
-      node, std::string(node->get_name()) + "/follow_joint_trajectory",
+      node, server_name,
       std::bind(&TrajectoryActionServer::GoalCallback, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&TrajectoryActionServer::CancelCallback, this, std::placeholders::_1),
       std::bind(&TrajectoryActionServer::FeedbackSetupCallback, this, std::placeholders::_1));
@@ -129,7 +132,7 @@ void TrajectoryActionServer::UpdateActionResult(int32_t error_code) {
   goal_handle_buffer_.writeFromNonRT(RealtimeGoalHandlePtr());
 }
 
-void TrajectoryActionServer::SetFeedback(const ControllerBaseState& state, const rclcpp::Time& stamp) {
+void TrajectoryActionServer::SetFeedback(const ControllerState& state, const rclcpp::Time& stamp) {
   const auto active_goal = *goal_handle_buffer_.readFromRT();
   if (!active_goal) {
     return;
@@ -151,7 +154,8 @@ void TrajectoryActionServer::PreemptActiveGoal() {
     action_result->set__error_code(control_msgs::action::FollowJointTrajectory::Result::INVALID_GOAL);
     action_result->set__error_string("Current goal cancelled.");
     active_goal->setCanceled(action_result);
-    goal_handle_buffer_.writeFromNonRT(RealtimeGoalHandlePtr());
+    goal_handle_timer_.reset();
+    goal_handle_buffer_.reset();
   }
 }
 
@@ -174,6 +178,7 @@ rclcpp_action::CancelResponse TrajectoryActionServer::CancelCallback(const Serve
     controller_->ResetTrajectory();
 
     auto action_result = std::make_shared<control_msgs::action::FollowJointTrajectory::Result>();
+    action_result->set__error_string("Current goal cancelled.");
     active_goal->setCanceled(action_result);
     goal_handle_buffer_.writeFromNonRT(RealtimeGoalHandlePtr());
   }
@@ -181,7 +186,7 @@ rclcpp_action::CancelResponse TrajectoryActionServer::CancelCallback(const Serve
 }
 
 void TrajectoryActionServer::FeedbackSetupCallback(ServerGoalHandlePtr goal_handle) {
-  PreemptActiveGoal();
+  controller_->PreemptActiveGoal();
 
   const auto msg = std::make_shared<trajectory_msgs::msg::JointTrajectory>(goal_handle->get_goal()->trajectory);
   controller_->UpdateTrajectory(msg);

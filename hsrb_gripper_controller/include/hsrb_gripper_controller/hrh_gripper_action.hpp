@@ -92,15 +92,15 @@ bool ValidateTrajectory(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                         const std::string& joint_name);
 
 /// @struct GoalCondition
-/// @brief Goal conditions
+/// @brief Goal condition
 struct GoalCondition {
   /// Command position
   double goal;
   /// Target arrival time
   rclcpp::Time expected_arrival_time;
-  /// Time to stop trajectory tracking
+  /// Time to stop trajectory following
   rclcpp::Time abort_time;
-  /// Allowable error for goal position
+  /// Allowable error of goal position
   double goal_tolerance;
 };
 
@@ -116,27 +116,27 @@ class IHrhGripperAction : public std::enable_shared_from_this<IHrhGripperAction>
   virtual int32_t target_mode() const = 0;
 
   /// Initialization
-  /// @param [in] node SharedPtr of node
+  /// @param [in] node Node's SharedPtr
   /// @return true: Success false: Failure
   virtual bool Init(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) = 0;
 
   /// Activation
-  /// @param [in] node SharedPtr of node
+  /// @param [in] node Node's SharedPtr
   /// @return true: Success false: Failure
   virtual bool Activate() = 0;
 
-  /// Periodic update process
+  /// Cycle update process
   /// @param [in] time Current time
   virtual void Update(const rclcpp::Time& time) = 0;
 
-  /// Interrupts the active goal
+  /// Interrupt active goal
   virtual void PreemptActiveGoal() = 0;
 
-  /// Acquisition of command value
+  /// Get command value
   /// @return Command value
   virtual trajectory_msgs::msg::JointTrajectoryPoint GetReferenceState() = 0;
 
-  /// Acquisition of current value
+  /// Get current value
   /// @return Current value
   virtual trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() = 0;
 };
@@ -149,7 +149,7 @@ class HrhGripperAction : public IHrhGripperAction {
  public:
   /// Constructor
   /// @param [in] controller Controller
-  /// @param [in] action_name Name of the provided action
+  /// @param [in] action_name Action name to provide
   /// @param [in] target_mode Control mode used by the action
   HrhGripperAction(HrhGripperController* controller, const std::string& action_name, int32_t target_mode)
       : controller_(controller), action_name_(action_name), target_mode_(target_mode) {}
@@ -159,19 +159,21 @@ class HrhGripperAction : public IHrhGripperAction {
   int32_t target_mode() const override { return target_mode_; }
 
   /// Initialization
-  /// @param [in] node SharedPtr of node
+  /// @param [in] node Node's SharedPtr
   /// @return true: Success false: Failure
   bool Init(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override {
     node_ = node;
 
     double action_monitor_rate = GetPositiveParameter(node, "action_monitor_rate", kDefaultActionMonitorRate);
     action_monitor_period_ = 1.0 / action_monitor_rate;
+    std::string gripper_namespace = GetParameter(node, "namespace", "~");
+    std::string interface_name = gripper_namespace + action_name_;
 
     if (!InitImpl(node)) {
       return false;
     }
     action_server_ = rclcpp_action::create_server<ActionType>(
-        node, action_name_,
+        node, interface_name,
         std::bind(&HrhGripperAction<ActionType>::GoalCallback, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&HrhGripperAction<ActionType>::CancelCallback, this, std::placeholders::_1),
         std::bind(&HrhGripperAction<ActionType>::FeedbackSetupCallback, this, std::placeholders::_1));
@@ -179,11 +181,11 @@ class HrhGripperAction : public IHrhGripperAction {
   }
 
   /// Activation
-  /// @param [in] node SharedPtr of node
+  /// @param [in] node Node's SharedPtr
   /// @return true: Success false: Failure
   bool Activate() override { return true; }
 
-  /// Interrupts the active goal
+  /// Interrupt active goal
   void PreemptActiveGoal() override {
     auto active_goal = *goal_handle_buffer_.readFromNonRT();
     active_goal.reset();
@@ -212,7 +214,7 @@ class HrhGripperAction : public IHrhGripperAction {
   /// Action server
   typename rclcpp_action::Server<ActionType>::SharedPtr action_server_;
 
-  /// Processing when action is received
+  /// Process when action is accepted
   rclcpp_action::GoalResponse GoalCallback(const rclcpp_action::GoalUUID& uuid,
                                            std::shared_ptr<const typename ActionType::Goal> goal) {
     if (!controller_->IsAcceptable()) {
@@ -225,7 +227,7 @@ class HrhGripperAction : public IHrhGripperAction {
     }
   }
 
-  /// Processing when action execution starts
+  /// Process when action execution starts
   void FeedbackSetupCallback(std::shared_ptr<GoalHandle> goal_handle) {
     controller_->PreemptActiveGoal();
     controller_->ChangeControlMode(shared_from_this());
@@ -239,7 +241,7 @@ class HrhGripperAction : public IHrhGripperAction {
                                                   std::bind(&RealtimeGoalHandle::runNonRealtime, realtime_goal_handle));
   }
 
-  /// Processing when action is canceled
+  /// Process when action is canceled
   /// @param [in] goal_handle Goal handle
   rclcpp_action::CancelResponse CancelCallback(const std::shared_ptr<GoalHandle> goal_handle) {
     const auto active_goal = *goal_handle_buffer_.readFromNonRT();
@@ -253,7 +255,7 @@ class HrhGripperAction : public IHrhGripperAction {
   virtual bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) { return true; }
   /// Check if the goal is acceptable
   virtual bool ValidateGoal(const typename ActionType::Goal& goal) { return true; }
-  /// Update the action goal
+  /// Update the action's target
   virtual void UpdateActionImpl(const typename ActionType::Goal& goal) = 0;
 
   /// Controller
@@ -266,9 +268,9 @@ class HrhGripperAction : public IHrhGripperAction {
   /// Action state update cycle
   double action_monitor_period_;
 
-  /// SharedPtr of node
+  /// Node's SharedPtr
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
-  /// Timer for action execution
+  /// Timer during action execution
   rclcpp::TimerBase::SharedPtr goal_handle_timer_;
 };
 

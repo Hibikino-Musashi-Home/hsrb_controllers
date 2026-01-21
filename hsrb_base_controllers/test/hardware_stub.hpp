@@ -109,7 +109,7 @@ class CommandVelocityHandle : public Handle {
   }
 
   void Update() override {
-    current_pos_ += current_vel_ / update_frequency_;
+    current_pos_ += command_ / update_frequency_;
     current_vel_ = command_;
   }
 

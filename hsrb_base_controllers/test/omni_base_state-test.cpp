@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state-test.cpp
-/// @brief Test class for the omnidirectional cart state
+/// @brief Test of the omnidirectional cart's cart state class
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ constexpr double kEpsilon = 1.0e-9;
 
 namespace hsrb_base_controllers {
 
-// Calculate the error from actual and desired
+// Calculate error from actual and desired
 TEST(ControllerStateTest, UpdateErrorNormal) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -69,7 +69,7 @@ TEST(ControllerStateTest, UpdateErrorNormal) {
   EXPECT_NEAR(state.error.accelerations[0], -4.2, kEpsilon);
 }
 
-// If the sizes of actual and desired do not match, the error is empty
+// If the sizes of actual and desired do not match, error is empty
 TEST(ControllerStateTest, UpdateErrorSizeMismatch) {
   ControllerState state;
   state.actual.positions = {0.1, 0.2, 0.3};
@@ -244,6 +244,7 @@ TEST(ConvertTest, JointTrajectoryControllerState) {
   state.desired.positions = {-0.1, -0.2, -0.3};
   state.desired.velocities = {-1.1, -1.2};
   state.desired.accelerations = {-2.1};
+  state.output.velocities = {3.0};
   state.UpdateError();
 
   control_msgs::msg::JointTrajectoryControllerState msg;
@@ -291,6 +292,9 @@ TEST(ConvertTest, JointTrajectoryControllerState) {
 
   ASSERT_EQ(msg.error.accelerations.size(), 1);
   EXPECT_NEAR(msg.error.accelerations[0], -4.2, kEpsilon);
+
+  ASSERT_EQ(msg.output.velocities.size(), 1);
+  EXPECT_NEAR(msg.output.velocities[0], 3.0, kEpsilon);
 }
 
 // Conversion to JointTrajectoryPoint
@@ -316,7 +320,7 @@ TEST(ConvertTest, JointTrajectoryPoint) {
   EXPECT_NEAR(msg.accelerations[0], 2.1, kEpsilon);
 }
 
-// Correctly published by StatePublisher
+// Correctly published in StatePublisher
 TEST(StatePublisherTest, Publish) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();
@@ -332,6 +336,7 @@ TEST(StatePublisherTest, Publish) {
   state.desired.positions = {-0.1, -0.2, -0.3};
   state.desired.velocities = {-1.1, -1.2};
   state.desired.accelerations = {-2.1};
+  state.output.velocities = {3.0};
   state.UpdateError();
 
   auto client_node = rclcpp::Node::make_shared("client_node");
@@ -390,6 +395,9 @@ TEST(StatePublisherTest, Publish) {
 
   ASSERT_EQ(msg.error.accelerations.size(), 1);
   EXPECT_NEAR(msg.error.accelerations[0], -4.2, kEpsilon);
+
+  ASSERT_EQ(msg.output.velocities.size(), 1);
+  EXPECT_NEAR(msg.output.velocities[0], 3.0, kEpsilon);
 }
 
 }  // namespace hsrb_base_controllers
