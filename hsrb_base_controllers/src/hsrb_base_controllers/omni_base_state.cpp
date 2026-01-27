@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_state.cpp
-/// @brief Omni-directional cart status class
+/// @brief Class for the state of an omnidirectional cart
 #include <hsrb_base_controllers/omni_base_state.hpp>
 
 #include <string>
@@ -42,8 +42,12 @@ DAMAGE.
 #include "utils.hpp"
 
 namespace {
-// Cart status publish frequency [Hz]
+// Cart state publish frequency [Hz]
 const double kDefaultStatePublishRate = 50.0;
+
+}  // namespace
+
+namespace hsrb_base_controllers {
 
 void ConvertVector(const Eigen::VectorXd& input_vector,
                    std::vector<double>& dst_vector) {
@@ -51,9 +55,6 @@ void ConvertVector(const Eigen::VectorXd& input_vector,
   Eigen::Map<Eigen::VectorXd> map(&dst_vector[0], dst_vector.size());
   map = input_vector;
 }
-}  // namespace
-
-namespace hsrb_base_controllers {
 
 void ControllerState::UpdateError() {
   if (actual.positions.size() == desired.positions.size()) {
@@ -92,7 +93,7 @@ ControllerBaseState::ControllerBaseState(const Eigen::Vector3d& actual_positions
                                          const std::vector<double>& desired_accelerations) {
   ConvertVector(actual_positions, actual.positions);
   // TODO(Takeshita) ここで変換しているのが微妙だなぁ
-  // Since base_velocity_ is based on base_footprint, convert it to the odom reference
+  // base_velocity_ is based on base_footprint, so convert to odom reference
   Eigen::Matrix3d rot_mat;
   rot_mat << cos(actual_positions[kIndexBaseTheta]), -sin(actual_positions[kIndexBaseTheta]), 0.0,
              sin(actual_positions[kIndexBaseTheta]), cos(actual_positions[kIndexBaseTheta]), 0.0,
@@ -135,6 +136,13 @@ ControllerJointState::ControllerJointState(const Eigen::Vector3d& actual_positio
   UpdateError();
 }
 
+ControllerJointState::ControllerJointState(const Eigen::Vector3d& actual_positions,
+                                           const Eigen::Vector3d& actual_velocities)
+    : ControllerJointState(actual_positions, actual_velocities, 0.0, Eigen::Vector3d::Zero()) {
+  desired = actual;
+  UpdateError();
+}
+
 void ControllerJointState::UpdateError() {
   ControllerState::UpdateError();
 
@@ -149,6 +157,7 @@ void Convert(const ControllerState& in, const rclcpp::Time& stamp, const std::ve
   Convert(in.actual, out.actual);
   Convert(in.desired, out.desired);
   Convert(in.error, out.error);
+  Convert(in.output, out.output);
 }
 
 void Convert(const State& in, trajectory_msgs::msg::JointTrajectoryPoint& out) {
@@ -161,7 +170,7 @@ void Convert(const State& in, trajectory_msgs::msg::JointTrajectoryPoint& out) {
 StatePublisher::StatePublisher(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                                const std::string& topic_name,
                                const std::vector<std::string>& joint_names)
-    : node_(node), joint_names_(joint_names), last_state_published_time_(node->now()), state_publish_period_(0, 0) {
+    : node_(node), joint_names_(joint_names), state_publish_period_(0, 0), last_state_published_time_(node->now()) {
   const double state_publish_rate = GetPositiveParameter(node, "state_publish_rate", kDefaultStatePublishRate);
   state_publish_period_ = rclcpp::Duration::from_seconds(1.0 / state_publish_rate);
 

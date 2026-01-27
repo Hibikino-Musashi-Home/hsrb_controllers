@@ -105,6 +105,7 @@ bool HrhGripperController::InitImpl() {
 
   left_spring_joint_ = GetParameter(get_node(), "left_spring_joint", "hand_l_spring_proximal_joint");
   right_spring_joint_ = GetParameter(get_node(), "right_spring_joint", "hand_r_spring_proximal_joint");
+  gripper_namespace_ = GetParameter(get_node(),  "namespace", "~");
   return true;
 }
 
@@ -140,11 +141,11 @@ controller_interface::return_type HrhGripperController::update(const rclcpp::Tim
   if (active_action_) {
     active_action_->Update(get_node()->get_clock()->now());
 
-    // Acquire state data from running action
+    // Retrieve state data from the running action
     reference = active_action_->GetReferenceState();
     feedback = active_action_->GetFeedbackState();
   } else {
-    // If there is no running action, set state data to the current value
+    // If there is no running action, set the state data to the current value
     feedback.positions = { GetCurrentPosition() };
     feedback.velocities = { GetCurrentVelocity() };
     feedback.effort = { GetCurrentTorque() };
@@ -153,10 +154,10 @@ controller_interface::return_type HrhGripperController::update(const rclcpp::Tim
   int32_t command_mode = *(command_control_mode_.readFromRT());
   command_interfaces_[command_drive_mode_index_].set_value(static_cast<double>(command_mode));
 
-  // Publish state
+  // Publish the state
   gripper_state_publisher_->Publish(reference, feedback, time);
 
-  // Publish fingertip distance
+  // Publish the distance between fingertips
   gripper_distance_publisher_->Publish(GetCurrentPosition(), time);
 
   return controller_interface::return_type::OK;
@@ -180,18 +181,20 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGri
     }
   }
 
-  // Set state publisher
-  gripper_state_publisher_ = std::make_shared<StatePublisher>(get_node(), "~/controller_state", joint_name_);
+  // Set the state publisher
+  std::string controller_state_name = gripper_namespace_ + "/controller_state";
+  gripper_state_publisher_ = std::make_shared<StatePublisher>(get_node(), controller_state_name, joint_name_);
 
-  // Set fingertip distance publisher
-  gripper_distance_publisher_ = std::make_shared<DistancePublisher>(get_node(), "~/fingertip_distance");
+  // Set the publisher for the distance between fingertips
+  std::string fingertip_distance_name = gripper_namespace_ + "/fingertip_distance";
+  gripper_distance_publisher_ = std::make_shared<DistancePublisher>(get_node(), fingertip_distance_name);
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn HrhGripperController::on_activate(
     const rclcpp_lifecycle::State& previous_state) {
-  // assign_interfaces => activate order, so it's already usable
+  // Since the order is assign_interfaces => activate, it can be used now
   for (const auto& state_interface : state_interfaces_) {
     if (state_interface.get_interface_name() == "current_drive_mode") {
       command_control_mode_.initRT(static_cast<int32_t>(state_interface.get_value()));

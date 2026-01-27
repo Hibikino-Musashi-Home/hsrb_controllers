@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_input_odometry.hpp
-/// @brief Odometry class for omnidirectional vehicle
+/// @brief Omnidirectional cart odometry class
 #ifndef HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 #define HSRB_BASE_CONTROLLERS_OMNI_BASE_INPUT_ODOMETRY_HPP_
 
@@ -65,7 +65,7 @@ class InputOdometry {
 
   // Odometry subscriber
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscriber_;
-  // Odometry data for real-time use
+  // Odometry data used in real-time
   RealtimeOdometryBuffer odometry_buffer_;
 };
 

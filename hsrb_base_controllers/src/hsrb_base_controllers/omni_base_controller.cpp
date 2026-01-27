@@ -43,7 +43,7 @@ DAMAGE.
 namespace hsrb_base_controllers {
 
 controller_interface::CallbackReturn OmniBaseController::on_init() {
-  // Do nothing in particular, all processing is in on_configure and on_activate
+  // Does nothing in particular, all processing is in on_configure and on_activate
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -80,69 +80,122 @@ controller_interface::return_type OmniBaseController::update(
   wheel_odometry_->UpdateOdometry(period_sec, joint_positions, joint_velocities);
   base_odometry_->UpdateOdometry(period_sec, wheel_odometry_->odometry(), wheel_odometry_->velocity());
 
-  // Update the tracking state of the cart
+  // Update the cart's following state
   ControllerBaseState base_state(base_odometry_->odometry(), base_odometry_->velocity());
 
-  Eigen::Vector3d output_velocity = Eigen::Vector3d::Zero();
-  if (trajectory_control_->UpdateActiveTrajectory()) {
-    // Trajectory tracking
+  // Current state of the cart
+  ControllerJointState joint_state(joint_positions, joint_velocities);
+
+  // Current state of the turning axis
+  ControllerState roll_state;
+  roll_state.actual.positions = { joint_positions[kJointIDSteer] };
+  roll_state.actual.velocities = { joint_velocities[kJointIDSteer] };
+
+  if (roll_trajectory_control_->UpdateActiveTrajectory()) {
+    // Trajectory following of the turning axis
     trajectory_msgs::msg::JointTrajectoryPoint desired_state;
     bool before_last_point;
     double time_from_point;
-    const auto is_valid = trajectory_control_->SampleDesiredState(
-        current_time, base_state.actual.positions, base_state.actual.velocities,
+    const auto is_valid = roll_trajectory_control_->SampleDesiredState(
+        current_time, roll_state.actual.positions, roll_state.actual.velocities,
         desired_state, before_last_point, time_from_point);
     if (is_valid) {
-      base_state = ControllerBaseState(
-          base_odometry_->odometry(), base_odometry_->velocity(),
-          desired_state.positions, desired_state.velocities, desired_state.accelerations);
-      output_velocity = trajectory_control_->GetOutputVelocity(base_state);
+      roll_state.desired.positions = desired_state.positions;
+      roll_state.desired.velocities = desired_state.velocities;
+      roll_state.desired.accelerations = desired_state.accelerations;
+      roll_state.UpdateError();
 
-      auto status = CheckTorelances(base_state, before_last_point, time_from_point);
+      joint_state.desired.positions[kJointIDSteer] = desired_state.positions[0];
+      joint_state.desired.velocities[kJointIDSteer] = desired_state.velocities[0];
+
+      auto status = roll_trajectory_control_->CheckTorelances(roll_state, before_last_point, time_from_point);
       if (status <= 0) {
-        trajectory_action_->UpdateActionResult(status);
-        trajectory_control_->ResetCurrentTrajectory();
+        roll_trajectory_action_->UpdateActionResult(status);
+        roll_trajectory_control_->ResetCurrentTrajectory();
       } else {
-        trajectory_action_->SetFeedback(base_state, current_time);
+        roll_trajectory_action_->SetFeedback(roll_state, current_time);
       }
     }
-  } else {
-    // Speed tracking
-    output_velocity = velocity_control_->GetOutputVelocity();
-  }
-  joint_controller_->SetJointCommand(period_sec, output_velocity);
 
-  // Publish the current state of the cart (command values, current position, difference)
-  const ControllerJointState joint_state(joint_positions,
-                                         joint_velocities,
-                                         joint_controller_->desired_steer_pos(),
-                                         joint_controller_->joint_command());
+    joint_state.desired.velocities[kJointIDRightWheel] = 0.0;
+    joint_state.desired.velocities[kJointIDLeftWheel] = 0.0;
+
+    joint_controller_->SetJointCommand(period_sec, joint_state.desired);
+  } else {
+    Eigen::Vector3d output_velocity = Eigen::Vector3d::Zero();
+    if (odom_trajectory_control_->UpdateActiveTrajectory()) {
+      // Trajectory following of odom
+      trajectory_msgs::msg::JointTrajectoryPoint desired_state;
+      bool before_last_point;
+      double time_from_point;
+      const auto is_valid = odom_trajectory_control_->SampleDesiredState(
+          current_time, base_state.actual.positions, base_state.actual.velocities,
+          desired_state, before_last_point, time_from_point);
+      if (is_valid) {
+        base_state = ControllerBaseState(
+            base_odometry_->odometry(), base_odometry_->velocity(),
+            desired_state.positions, desired_state.velocities, desired_state.accelerations);
+        output_velocity = odom_trajectory_control_->GetOutputVelocity(base_state);
+
+        auto status = odom_trajectory_control_->CheckTorelances(base_state, before_last_point, time_from_point);
+        if (status <= 0) {
+          odom_trajectory_action_->UpdateActionResult(status);
+          odom_trajectory_control_->ResetCurrentTrajectory();
+        } else {
+          odom_trajectory_action_->SetFeedback(base_state, current_time);
+        }
+      }
+    } else {
+      // Speed following
+      output_velocity = velocity_control_->GetOutputVelocity();
+      ConvertVector(output_velocity, base_state.desired.velocities);
+    }
+
+    joint_controller_->SetJointCommand(period_sec, output_velocity);
+    ConvertVector(joint_controller_->base_output_velocity(), base_state.output.velocities);
+  }
+
+  // Publish the current state of the cart (command value, current position, difference)
+  ConvertVector(joint_controller_->joint_command_position(), joint_state.desired.positions);
+  ConvertVector(joint_controller_->joint_desired_velocity(), joint_state.desired.velocities);
+  ConvertVector(joint_controller_->joint_output_velocity(), joint_state.output.velocities);
+  joint_state.UpdateError();
   joint_state_publisher_->Publish(joint_state, current_time);
   base_state_publisher_->Publish(base_state, current_time);
 
   // Publish wheel odometry and TF
   wheel_odometry_->PublishOdometry(current_time);
 
-  trajectory_control_->TerminateControl(current_time, base_state);
+  odom_trajectory_control_->TerminateControl(current_time, base_state);
+  roll_trajectory_control_->TerminateControl(current_time, roll_state);
 
   return controller_interface::return_type::OK;
 }
 
 controller_interface::CallbackReturn OmniBaseController::on_configure(const rclcpp_lifecycle::State& previous_state) {
-  // Get the axis names of the cart to be controlled
+  // Get the coordinate axis name of the cart to be controlled
   const auto base_coordinate_names = GetParameter<std::vector<std::string>>(get_node(), "base_coordinates", {});
   if (base_coordinate_names.size() != kNumBaseCoordinateIDs) {
     RCLCPP_ERROR(get_node()->get_logger(), "The size of joints must be three.");
     return controller_interface::CallbackReturn::ERROR;
   }
-  default_tolerances_ = get_segment_tolerances(get_node(), base_coordinate_names);
+  base_roll_joint_name_ = GetParameter<std::string>(get_node(), "joints.steer", "base_roll_joint");
+  std::vector<std::string> joint_names = { base_roll_joint_name_ };
 
   // Set the speed subscriber
   velocity_subscriber_ = std::make_shared<CommandVelocitySubscriber>(get_node(), this);
-  // Set the trajectory subscriber
-  trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(get_node(), this);
-  // Launch the action server
-  trajectory_action_ = std::make_shared<TrajectoryActionServer>(get_node(), base_coordinate_names, this);
+  // Set the cart trajectory subscriber
+  odom_trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(
+      get_node(), "~/joint_trajectory", this);
+  // Set the turning axis trajectory subscriber
+  roll_trajectory_subscriber_ = std::make_shared<CommandTrajectorySubscriber>(
+      get_node(), "~/roll_joint_trajectory", this);
+  // Launch the cart trajectory action server
+  odom_trajectory_action_ = std::make_shared<TrajectoryActionServer>(
+      get_node(), base_coordinate_names, "~/follow_joint_trajectory", this);
+  // Launch the turning axis trajectory action server
+  roll_trajectory_action_ = std::make_shared<TrajectoryActionServer>(
+      get_node(), joint_names, "~/follow_roll_joint_trajectory", this);
 
   // Joint controller class
   const auto command_base_roll_velocity = GetParameter<bool>(get_node(), "use_base_roll_velocity", false);
@@ -161,9 +214,10 @@ controller_interface::CallbackReturn OmniBaseController::on_configure(const rclc
   // Set the cart odometry publisher
   base_odometry_ = std::make_shared<BaseOdometry>(get_node());
 
-  // Create a controller
+  // Create the controller
   velocity_control_ = std::make_shared<OmniBaseVelocityControl>(get_node());
-  trajectory_control_ = std::make_shared<OmniBaseTrajectoryControl>(get_node(), base_coordinate_names);
+  odom_trajectory_control_ = std::make_shared<OmniBaseOdomTrajectoryControl>(get_node(), base_coordinate_names);
+  roll_trajectory_control_ = std::make_shared<OmniBaseRollTrajectoryControl>(get_node(), joint_names);
 
   // Set the internal joint state publisher
   base_state_publisher_ = std::make_shared<StatePublisher>(
@@ -180,7 +234,8 @@ controller_interface::CallbackReturn OmniBaseController::on_activate(const rclcp
   }
   // Activate here to match the JointTrajectoryController
   velocity_control_->Activate();
-  trajectory_control_->Activate();
+  odom_trajectory_control_->Activate();
+  roll_trajectory_control_->Activate();
 
   const auto current_time = get_node()->get_clock()->now();
   wheel_odometry_->set_last_odometry_published_time(current_time);
@@ -188,16 +243,18 @@ controller_interface::CallbackReturn OmniBaseController::on_activate(const rclcp
   joint_state_publisher_->set_last_state_published_time(current_time);
   base_state_publisher_->set_last_state_published_time(current_time);
 
-  // Initialize odometry at launch
+  // Initialize odometry at startup
   base_odometry_->InitOdometry();
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::CallbackReturn OmniBaseController::on_deactivate(const rclcpp_lifecycle::State& previous_state) {
-  // Reset the current action goal when shutting down the controller
-  trajectory_action_->PreemptActiveGoal();
-  // Clear command speed
+  // Reset the current action goal when the controller is shut down
+  odom_trajectory_action_->PreemptActiveGoal();
+  roll_trajectory_action_->PreemptActiveGoal();
+
+  // Clear the command speed
   const auto zero_velocity = std::make_shared<geometry_msgs::msg::Twist>();
   velocity_control_->UpdateCommandVelocity(zero_velocity);
   return controller_interface::CallbackReturn::SUCCESS;
@@ -207,58 +264,40 @@ bool OmniBaseController::IsAcceptable() {
   return get_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE;
 }
 
+void OmniBaseController::PreemptActiveGoal() {
+  odom_trajectory_action_->PreemptActiveGoal();
+  roll_trajectory_action_->PreemptActiveGoal();
+  ResetTrajectory();
+}
+
 void OmniBaseController::UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) {
   velocity_control_->UpdateCommandVelocity(msg);
 }
 
 bool OmniBaseController::ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) {
-  return trajectory_control_->ValidateTrajectory(trajectory);
+  if (trajectory.joint_names.size() == 0) {
+    RCLCPP_ERROR(get_node()->get_logger(), "Trajectory has no joint names");
+    return false;
+  } else if (trajectory.joint_names[0] == base_roll_joint_name_) {
+    return roll_trajectory_control_->ValidateTrajectory(trajectory);
+  } else if (trajectory.joint_names.size() == kNumBaseCoordinateIDs) {
+    return odom_trajectory_control_->ValidateTrajectory(trajectory);
+  }
+  RCLCPP_ERROR(get_node()->get_logger(), "Trajectory's joint_name mismatch.");
+  return false;
 }
 
 void OmniBaseController::UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) {
-  active_tolerances_ = default_tolerances_;
-  trajectory_control_->AcceptTrajectory(trajectory, base_odometry_->odometry());
+  if (trajectory->joint_names[0] == base_roll_joint_name_) {
+    roll_trajectory_control_->AcceptTrajectory(trajectory, base_odometry_->odometry());
+  } else if (trajectory->joint_names.size() == kNumBaseCoordinateIDs) {
+    odom_trajectory_control_->AcceptTrajectory(trajectory, base_odometry_->odometry());
+  }
 }
 
 void OmniBaseController::ResetTrajectory() {
-  trajectory_control_->ResetCurrentTrajectory();
-}
-
-int32_t OmniBaseController::CheckTorelances(const ControllerBaseState& state,
-                                            bool before_last_point,
-                                            double time_from_trajectory_end) {
-  trajectory_msgs::msg::JointTrajectoryPoint error;
-  Convert(state.error, error);
-
-  if (before_last_point) {
-    // Since tracking trajectory, just check if the path is not deviating
-    for (uint32_t i = 0; i < active_tolerances_.state_tolerance.size(); ++i) {
-      if (!check_state_tolerance_per_joint(error, i, active_tolerances_.state_tolerance[i])) {
-        RCLCPP_ERROR(get_node()->get_logger(), "Path tolerance violated.");
-        return control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED;
-      }
-    }
-  } else {
-    // Check if reached the goal, wait without doing anything if within time
-    bool abort = false;
-    for (uint32_t i = 0; i < active_tolerances_.goal_state_tolerance.size(); ++i) {
-      if (!check_state_tolerance_per_joint(error, i, active_tolerances_.goal_state_tolerance[i])) {
-        abort = true;
-        break;
-      }
-    }
-    if (!abort) {
-      return control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL;
-    } else if (active_tolerances_.goal_time_tolerance != 0.0) {
-      // != with 0.0 is dangerous, but as the default value is 0.0, proceed with this
-      if (time_from_trajectory_end > active_tolerances_.goal_time_tolerance) {
-        RCLCPP_ERROR(get_node()->get_logger(), "Goal tolerance violated.");
-        return control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED;
-      }
-    }
-  }
-  // Defined error codes are 0 or less, so return a positive number to indicate none
-  return 1;
+  odom_trajectory_control_->ResetCurrentTrajectory();
+  roll_trajectory_control_->ResetCurrentTrajectory();
 }
 
 }  // namespace hsrb_base_controllers

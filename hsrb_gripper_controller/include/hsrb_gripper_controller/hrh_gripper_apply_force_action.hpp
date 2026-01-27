@@ -43,7 +43,7 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperApplyForceCalculator
-/// @brief Hrh Gripper Fingertip Force Calculation Class
+/// @brief Hrh gripper fingertip force calculation class
 class HrhGripperApplyForceCalculator {
  public:
   using Ptr = std::shared_ptr<HrhGripperApplyForceCalculator>;
@@ -64,12 +64,12 @@ class HrhGripperApplyForceCalculator {
   /// Load calibration data for force control
   void LoadForceCalibrationData(const std::string& path, const rclcpp::Logger& logger);
 
-  /// Compute current fingertip force by comparing with internal force
+  /// Calculate current fingertip force in comparison with internal force
   /// @return Current fingertip force [N]
   double CalculateForce(double hand_motor_pos, double spring_proximal_joint_pos,
                         const std::vector<std::vector<double> >& calib_data) const;
 
-  /// Calculate internal force of the gripper from calibration data
+  /// Calculate gripper internal force from calibration data
   /// @return Internal force [N]
   double CalculateInternalForce(double hand_motor_pos, const std::vector<double>& calib_p0,
                                 const std::vector<double>& calib_p1) const;
@@ -78,7 +78,7 @@ class HrhGripperApplyForceCalculator {
   std::vector<std::vector<double>> hand_left_force_calib_data_;
   std::vector<std::vector<double>> hand_right_force_calib_data_;
 
-  /// Spring constant for finger base joints [Nm/rad]
+  /// Spring constant of finger base joint [Nm/rad]
   double hand_spring_coeff_;
 
   /// Finger length [m]
@@ -87,7 +87,7 @@ class HrhGripperApplyForceCalculator {
 
 
 /// @class HrhGripperApplyForceAction
-/// @brief Hrh Gripper Force Control Action Class
+/// @brief Hrh gripper force control action class
 class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::action::GripperApplyEffort> {
  public:
   /// Constructor
@@ -103,12 +103,12 @@ class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::act
   trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() override;
 
  private:
-  /// Implementation to initialize action
+  /// Implementation of action initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Update action goals
+  /// Update action target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) override;
 
-  /// Tolerance for goal force [N]
+  /// Allowable error of goal force [N]
   double goal_tolerance_;
   /// Speed threshold for stall judgment [rad/s]
   double stall_velocity_threshold_;
@@ -120,14 +120,14 @@ class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::act
   double force_control_igain_;
   double force_control_dgain_;
 
-  /// Limitation value for accumulated error integration of I control
+  /// Limit value for error integration accumulation of I control
   double force_ierr_max_;
-  /// Buffer for accumulated error integration of I control
+  /// Error integration accumulation buffer of I control
   double force_ierr_buff_;
 
   /// Low-pass filter coefficient for fingertip force
   double force_lpf_coeff_;
-  /// Buffer for low-pass filter of fingertip force [N]
+  /// Low-pass filter buffer for fingertip force [N]
   double force_lpf_buff_;
 
   /// Fingertip force calculator
@@ -135,18 +135,18 @@ class HrhGripperApplyForceAction : public HrhGripperAction<tmc_control_msgs::act
 
   /// Command value buffer
   realtime_tools::RealtimeBuffer<double> command_buffer_;
-  /// Buffer for action continuation flag
+  /// Action continuation flag buffer
   realtime_tools::RealtimeBuffer<bool> stop_flag_buffer_;
 
-  /// Calculate target position from error between command value and current fingertip force
+  /// Calculate target position from the error between command value and current value of fingertip force
   /// @return Target position
   double GetCommandPos();
-  /// Current fingertip force passed through low-pass filter [N]
+  /// Current fingertip force after passing through low-pass filter [N]
   double current_force_lpf_;
   /// Current target position
   double current_command_pos_;
 
-  /// Action success judgment
+  /// Action success/failure judgment
   /// @param [in] time Current time
   void CheckForSuccess(const rclcpp::Time& time);
   /// Last operation time
