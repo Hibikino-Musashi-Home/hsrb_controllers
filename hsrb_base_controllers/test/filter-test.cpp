@@ -44,7 +44,7 @@ const double kEpsilon = 1.0e-5;
 namespace hsrb_base_controllers {
 
 TEST(FilterTest, Default) {
-  // Default is initialized with a=[1.0], b=[1.0]
+  // By default, initialized with a=[1.0], b=[1.0]
   Filter<> filter;
   // Nothing is filtered
   EXPECT_EQ(1.0, filter.update(1.0));
@@ -53,13 +53,13 @@ TEST(FilterTest, Default) {
 }
 
 TEST(FilterTest, Normal) {
-  // Default is initialized with {1.0, 0.1, 0.9}, b={0.2, 0.8}
+  // By default, initialized with {1.0, 0.1, 0.9}, b={0.2, 0.8}
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // Internal state initialized with 0
+  // Internal state is initialized to 0
   // y = 1.0*0.2 + 0.0*0.8 - 0.0*0.1 - 0.0*0.9
   EXPECT_NEAR(0.2, filter.update(1.0), kEpsilon);
   // y = 2.0*0.2 + 1.0*0.8 - 0.2*0.1 - 0.0*0.9
@@ -71,13 +71,13 @@ TEST(FilterTest, Normal) {
 }
 
 TEST(FilterTest, Reset) {
-  // Default is initialized with {1.0, 0.1, 0.9}, b={0.2, 0.8}
+  // By default, initialized with {1.0, 0.1, 0.9}, b={0.2, 0.8}
   double aa[] = {1.0, 0.1, 0.9};
   double bb[] = {0.2, 0.8};
   std::vector<double> a(aa, aa+3);
   std::vector<double> b(bb, bb+2);
   Filter<> filter(a, b);
-  // Internal state initialized to 1.0 (state where input and output are balanced at 1.0)
+  // Initialize internal state to 1.0 (state where input and output are balanced at 1.0)
   filter.reset(1.0);
   // y = 1.0*0.2 + 1.0*0.8 - 1.0*0.1 - 1.0*0.9
   EXPECT_NEAR(0.0, filter.update(1.0), kEpsilon);

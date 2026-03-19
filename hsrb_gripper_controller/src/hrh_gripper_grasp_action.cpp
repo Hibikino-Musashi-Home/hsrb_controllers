@@ -45,7 +45,7 @@ const double kDefaultTorqueGoalTolerance = 1.0;
 namespace hsrb_gripper_controller {
 
 HrhGripperGraspAction::HrhGripperGraspAction(HrhGripperController* controller)
-    : HrhGripperAction(controller, "~/grasp", tmc_exxx_servo_motor_protocol::kDriveModeHandGrasp),
+    : HrhGripperAction(controller, "/grasp", tmc_exxx_servo_motor_protocol::kDriveModeHandGrasp),
       is_sent_start_grasping_(false),
       goal_tolerance_(kDefaultTorqueGoalTolerance) {}
 
@@ -59,15 +59,15 @@ void HrhGripperGraspAction::Update(const rclcpp::Time& time) {
     std::lock_guard<std::mutex> guard(mutex_);
     bool start_grasping_flag;
     if (grasping_flag) {
-      // Grip initiation flag already set to ON
+      // Grasp start flag already ON
       start_grasping_flag = false;
       is_sent_start_grasping_ = true;
     } else {
       if (is_sent_start_grasping_) {
-        // Grip initiation flag sent and grip completed
+        // Grasp start flag sent and grasp completed
         start_grasping_flag = false;
       } else {
-        // Haven't sent the grip initiation flag yet
+        // Grasp start flag not yet sent
         start_grasping_flag = true;
       }
     }
@@ -101,7 +101,7 @@ bool HrhGripperGraspAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::Shar
   return true;
 }
 
-/// Update action goals
+/// Update action target
 void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) {
   std::lock_guard<std::mutex> guard(mutex_);
   command_torque_ = goal.effort;
@@ -110,9 +110,9 @@ void HrhGripperGraspAction::UpdateActionImpl(const tmc_control_msgs::action::Gri
 
 void HrhGripperGraspAction::CheckForSuccess() {
   bool grasping_flag = controller_->GetCurrentGraspingFlag();
-  // Setting the grip initiation flag on the control table starts gripping,
-  // The flag resets upon stalling (command and status confirmation fields are identical)
-  // If the grip initiation flag is sent and the current grip flag is reset, gripping is complete.
+  // Setting the grasp start flag on the control table initiates grasp,
+  // Specification where flag is reset upon stall (command and status confirmation fields are identical)
+  // If the grasp start flag is sent and the current grasp flag is reset, the grasp is complete.
   bool has_completed;
   {
     std::lock_guard<std::mutex> guard(mutex_);
@@ -123,7 +123,7 @@ void HrhGripperGraspAction::CheckForSuccess() {
     result->stalled = true;
     result->effort = controller_->GetCurrentTorque();
 
-    // Compare command values and current values when a stall occurs and equilibrium is achieved
+    // Compare command value and current value when stalled and equilibrium is reached
     bool is_succeeded;
     {
       std::lock_guard<std::mutex> guard(mutex_);

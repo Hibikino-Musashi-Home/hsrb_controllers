@@ -30,6 +30,8 @@ DAMAGE.
 #include <rclcpp/rclcpp.hpp>
 #include <urdf/model.h>
 
+#include <tmc_utils/robot_description.hpp>
+
 #include "hsrb_gripper_controller/hrh_gripper_action.hpp"
 
 namespace {
@@ -40,11 +42,7 @@ const double kDefaultDistancePublishRate = 50.0;
 // Default hand physical parameters
 const double kDefaultProximalToDistalZ = 0.07;
 const double kDefaultDistancePalmToTip = 0.002194;
-// Default name of the URDF robot model to load
-const char* kDefaultRobotModelName = "robot_description";
-// Default name of the node to load the URDF robot model
-const char* kDefaultRobotModelNode = "robot_state_publisher";
-// Default name of the axis to load from the URDF robot model
+// Default axis names to load in the urdf robot model
 const char* kDefaultProximalJointName = "hand_l_proximal_joint";
 const char* kDefaultDistalJointName = "hand_l_distal_joint";
 const char* kDefaultMimicDistalJointName = "hand_l_mimic_distal_joint";
@@ -59,21 +57,21 @@ HrhGripperDistanceCalculator::HrhGripperDistanceCalculator()
 
 bool HrhGripperDistanceCalculator::InitializeHandSizeData(
     const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
-  // Load URDF
+  // URDF loading
   auto urdf = std::make_shared<urdf::Model>();
-  if (!urdf->initString(GetRobotDescription(node))) {
+  if (!urdf->initString(tmc_utils::ResolveRobotDescription(node))) {
     RCLCPP_ERROR(node->get_logger(), "Failed to parse URDF");
     return false;
   }
 
-  // Axis name to be retrieved
+  // Axis names to retrieve
   auto proximal_joint_name = GetParameter(node, "proximal_joint", kDefaultProximalJointName);
   auto distal_joint_name = GetParameter(node, "distal_joint", kDefaultDistalJointName);
   auto mimic_distal_joint_name = GetParameter(node, "mimic_distal_joint", kDefaultMimicDistalJointName);
   auto finger_tip_frame_joint_name =
       GetParameter(node, "finger_tip_frame_joint", kDefaultFingerTipFrameJointName);
 
-  // Retrieve each axis from the URDF
+  // Retrieve each axis from URDF
   auto proximal_joint = urdf->getJoint(proximal_joint_name);
   auto distal_joint = urdf->getJoint(distal_joint_name);
   auto mimic_distal_joint = urdf->getJoint(mimic_distal_joint_name);
@@ -83,13 +81,13 @@ bool HrhGripperDistanceCalculator::InitializeHandSizeData(
     return false;
   }
 
-  // Obtain necessary parameters
+  // Retrieve necessary parameters
   double distal_to_tip_y = fabs(finger_tip_frame_joint->parent_to_joint_origin_transform.position.y);
   double distal_to_tip_z = fabs(finger_tip_frame_joint->parent_to_joint_origin_transform.position.z);
   double distal_joint_angle_offset = fabs(distal_joint->mimic->offset);
   double palm_to_proximal_y = fabs(proximal_joint->parent_to_joint_origin_transform.position.y);
 
-  // Retain values used for width calculation
+  // Store values used for calculating opening width
   proximal_to_distal_z_ = fabs(mimic_distal_joint->parent_to_joint_origin_transform.position.z);
   distance_palm_to_tip_ = palm_to_proximal_y
                           - (distal_to_tip_y * cos(distal_joint_angle_offset)
@@ -98,43 +96,12 @@ bool HrhGripperDistanceCalculator::InitializeHandSizeData(
   return true;
 }
 
-// Load URDF
-std::string HrhGripperDistanceCalculator::GetRobotDescription(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
-  // First, try to load from one's own node. If unsuccessful, try to load from model_node_name
-  // In the case of gazebo, it's necessary to load from another node as robot_description cannot be placed in the controller_manager
-  const std::string model_name = GetParameter(node, "model_name", kDefaultRobotModelName);
-  const std::string robot_description_out = GetParameter(node, model_name, "");
-  if (!robot_description_out.empty()) {
-    return robot_description_out;
-  }
-
-  const std::string model_node_name = GetParameter(node, "model_node_name", kDefaultRobotModelNode);
-  const int32_t timeout = GetParameter(node, "parameter_connection_timeout", 60);
-  // Temporarily generate a node object.
-  std::string node_name = std::string(node->get_name());
-  auto gripper_controller_node = rclcpp_lifecycle::LifecycleNode::make_shared(node_name);
-  auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(
-      gripper_controller_node, model_node_name);
-  int32_t wait_for_service_count = 0;
-  while (!parameters_client->wait_for_service(std::chrono::seconds(1))) {
-    ++wait_for_service_count;
-    if (!rclcpp::ok()) {
-      return "";
-    } else if (wait_for_service_count >= timeout) {
-      RCLCPP_ERROR_STREAM(node->get_logger(), "Could not connect parameter server of " << model_node_name);
-      return "";
-    }
-  }
-  return parameters_client->get_parameter(model_name, std::string());
-}
-
-/// Calculate width from hand angle
+/// Calculate opening width from hand angle
 double HrhGripperDistanceCalculator::GetDistanceFromPosition(double hand_motor_pos) const {
   return GetDistanceFromPosition(hand_motor_pos, 0.0, 0.0);
 }
 
-/// Calculate width from hand angle and angle of each finger
+/// Calculate opening width from hand angle and each finger's angle
 double HrhGripperDistanceCalculator::GetDistanceFromPosition(
     double hand_motor_pos, double left_spring_proximal_joint_pos,
     double right_spring_proximal_joint_pos) const {
@@ -144,7 +111,7 @@ double HrhGripperDistanceCalculator::GetDistanceFromPosition(
   return ploximal_to_distal + 2.0 * distance_palm_to_tip_;
 }
 
-/// Calculate hand angle from width
+/// Calculate hand angle from opening width
 double HrhGripperDistanceCalculator::GetPositionFromDistance(double distance) const {
   return asin((distance / 2.0 - distance_palm_to_tip_) / proximal_to_distal_z_);
 }
@@ -161,7 +128,7 @@ DistancePublisher::DistancePublisher(const rclcpp_lifecycle::LifecycleNode::Shar
   publisher_impl_ = node->create_publisher<std_msgs::msg::Float32>(topic_name, rclcpp::SystemDefaultsQoS());
   publisher_ = std::make_unique<RealtimePublisher>(publisher_impl_);
 
-  // Initialize class for width calculation
+  // Initialize class for opening width calculation
   distance_calculator_ = std::make_shared<HrhGripperDistanceCalculator>();
   distance_calculator_->InitializeHandSizeData(node);
 }

@@ -34,9 +34,11 @@ DAMAGE.
 
 #include "utils.hpp"
 
+#include <functional>
+
 namespace hsrb_base_controllers {
 
-// If not positive, get the parameter that uses the default value
+// Retrieve parameter using default value if negative
 double GetPositiveParameter(
     const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name, double default_value) {
   auto value = GetParameter(node, parameter_name, default_value);
@@ -47,6 +49,34 @@ double GetPositiveParameter(
                        parameter_name << " must be positive. Use default value " << default_value);
     return default_value;
   }
+}
+
+// Search for the minimum ratio using ternary search
+template <typename Compare = std::less<double>>
+double TernarySearchMin(const CostFunction& cost_function, double epsilon, Compare comp = Compare{}) {
+  double low = 0.0;
+  double high = 1.0;
+  while (high - low > epsilon) {
+    const double mid1 = (2.0 * low + high) / 3.0;
+    const double mid2 = (low + 2.0 * high) / 3.0;
+    const double cost1 = cost_function(mid1);
+    const double cost2 = cost_function(mid2);
+
+    if (comp(cost1, cost2)) {
+      high = mid2;
+    } else {
+      low = mid1;
+    }
+  }
+  return (low + high) / 2.0;
+}
+
+double TernarySearchMinRight(const CostFunction& cost_function, double epsilon) {
+  return TernarySearchMin(cost_function, epsilon, std::less<double>{});
+}
+
+double TernarySearchMinLeft(const CostFunction& cost_function, double epsilon) {
+  return TernarySearchMin(cost_function, epsilon, std::less_equal<double>{});
 }
 
 }  // namespace hsrb_base_controllers

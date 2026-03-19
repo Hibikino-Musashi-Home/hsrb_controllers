@@ -41,11 +41,11 @@ DAMAGE.
 namespace hsrb_gripper_controller {
 
 /// @class HrhGripperSetDistanceAction
-/// @brief Hrh Fingertip Distance Setting Action Class
+/// @brief Hrh fingertip distance setting action class
 class HrhGripperSetDistanceAction : public HrhGripperAction<tmc_control_msgs::action::GripperSetDistance> {
  public:
   /// Constructor
-  /// @param [in] controller Parent Controller
+  /// @param [in] controller Parent controller
   explicit HrhGripperSetDistanceAction(HrhGripperController* controller);
   virtual ~HrhGripperSetDistanceAction() = default;
 
@@ -57,72 +57,72 @@ class HrhGripperSetDistanceAction : public HrhGripperAction<tmc_control_msgs::ac
   trajectory_msgs::msg::JointTrajectoryPoint GetFeedbackState() override;
 
  protected:
-  /// Implementation of Action Initialization
+  /// Implementation of action initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
   /// Update the action target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperSetDistance::Goal& goal) override;
 
-  /// Calculate the target position from the error between the command value and current value of the width
-  /// @param [in] current_distance Current Width
-  /// @return Target Position
+  /// Calculate the target position from the error between the commanded and current opening width
+  /// @param [in] current_distance Current opening width
+  /// @return Target position
   double GetCommandPos(const double current_distance);
 
-  /// Success Determination
-  /// @param [in] time Current Time
-  /// @param [in] current_distance Current Width
+  /// Success determination
+  /// @param [in] time             Current time
+  /// @param [in] current_distance Current opening width
   void CheckForSuccess(const rclcpp::Time& time, const double current_distance);
 
-  /// Callback when the width command arrives via topic
-  /// @param [in] msg Width
+  /// Callback when the opening width command is received via topic
+  /// @param [in] msg Opening width
   void DistanceCommandCallback(const std_msgs::msg::Float32::SharedPtr msg);
 
-  /// Set Command
-  /// @param [in] distance Width
-  /// @param [in] stop_flag Control Stop Flag
+  /// Set the command
+  /// @param [in] distance  Opening width
+  /// @param [in] stop_flag Control stop flag
   void SetCommandValue(const double distance);
 
-  /// Allowable Error of Goal Position [m]
+  /// Allowable error for goal position [m]
   double goal_tolerance_;
-  /// Speed Threshold for Stall Judgement [rad/s]
+  /// Speed threshold for stall determination [rad/s]
   double stall_velocity_threshold_;
-  /// Time for Stall Judgement [s]
+  /// Time for stall determination [s]
   double distance_control_stall_timeout_;
-  /// P Gain for Width Control
+  /// Opening width control P gain
   double distance_control_pgain_;
-  /// I Gain for Width Control
+  /// Opening width control I gain
   double distance_control_igain_;
-  /// D Gain for Width Control
+  /// Opening width control D gain
   double distance_control_dgain_;
-  /// Maximum Angle [rad]
+  /// Maximum angle [rad]
   double hand_motor_joint_max_;
-  /// Minimum Angle [rad]
+  /// Minimum angle [rad]
   double hand_motor_joint_min_;
 
-  // Maximum Width [m]
+  // Maximum opening width [m]
   double distance_max_;
-  // Minimum Width [m]
+  // Minimum opening width [m]
   double distance_min_;
-  // Integral Value of Error
+  // Integral value of error
   double integrated_distance_error_;
-  // Previous Value of Error
+  // Previous error value
   double last_error_;
 
-  // Last Operating Time
+  // Last operating time
   rclcpp::Time last_movement_time_;
 
-  /// Current Target Position
+  /// Current target position
   double current_command_pos_;
 
-  /// Width Command Reception
+  /// Opening width command reception
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr distance_command_sub_;
 
-  /// Fingertip Distance Calculator
+  /// Fingertip distance calculator
   HrhGripperDistanceCalculator::Ptr distance_calculator_;
 
-  /// Goal Buffer
+  /// Goal buffer
   realtime_tools::RealtimeBuffer<double> goal_buffer_;
 
-  /// Operation Stop Flag Buffer
+  /// Operation stop flag buffer
   realtime_tools::RealtimeBuffer<bool> stop_flag_buffer_;
 };
 

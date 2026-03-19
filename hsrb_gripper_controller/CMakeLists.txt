@@ -15,6 +15,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tmc_control_msgs REQUIRED)
 find_package(tmc_exxx_servo_motor_protocol REQUIRED)
+find_package(tmc_utils REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(urdf REQUIRED)
 
@@ -41,6 +42,7 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
   tmc_control_msgs
   tmc_exxx_servo_motor_protocol
+  tmc_utils
   trajectory_msgs
   urdf
 )
@@ -121,6 +123,7 @@ ament_export_dependencies(
   std_msgs
   tmc_control_msgs
   tmc_exxx_servo_motor_protocol
+  tmc_utils
   trajectory_msgs
   urdf
 )

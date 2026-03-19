@@ -30,7 +30,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test of the Hrh gripping control action
+/// @brief Test of Hrh grip control action
 
 #include <gtest/gtest.h>
 
@@ -56,7 +56,7 @@ TEST_F(GraspActionTest, ActionSucceeded) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grip start
   hardware_->effort->set_current(0.0);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
@@ -64,14 +64,14 @@ TEST_F(GraspActionTest, ActionSucceeded) {
   EXPECT_TRUE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // Gripping in process
+  // Gripping
   hardware_->grasping_flag->set_current(true);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_FALSE(hardware_->grasping_flag->bool_command());
   EXPECT_DOUBLE_EQ(hardware_->effort->command(), 3.0);
 
-  // Gripping complete
+  // Grip complete
   hardware_->effort->set_current(2.1);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
@@ -94,16 +94,16 @@ TEST_F(GraspActionTest, ActionAborted) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grip start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Gripping in process
+  // Gripping
   hardware_->grasping_flag->set_current(true);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Gripping complete
+  // Grip complete
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
@@ -122,7 +122,7 @@ TEST_F(GraspActionTest, PreemptFromOutside) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grip start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
@@ -138,7 +138,7 @@ TEST_F(GraspActionTest, PreemptFromOutside) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED)));
 
-  // Status does not change due to the interruption
+  // State does not change due to interruption
   hardware_->grasping_flag->set_current(true);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
@@ -155,12 +155,12 @@ TEST_F(GraspActionTest, CancelGoal) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grip start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Throw a cancel
+  // Throw cancel
   auto goal_handle = future_goal_handle.get();
   EXPECT_TRUE(goal_handle.get());
 
@@ -184,16 +184,16 @@ TEST_F(GraspActionTest, GoalTorelance) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // Start gripping
+  // Grip start
   hardware_->effort->set_current(1.9);
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Gripping in process
+  // Gripping
   hardware_->grasping_flag->set_current(true);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Gripping complete
+  // Grip complete
   hardware_->grasping_flag->set_current(false);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 

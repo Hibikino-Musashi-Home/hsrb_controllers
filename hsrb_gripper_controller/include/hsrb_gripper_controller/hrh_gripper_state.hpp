@@ -66,7 +66,7 @@ class StatePublisher {
   std::unique_ptr<RealtimePublisher> publisher_;
   rclcpp::Publisher<control_msgs::msg::JointTrajectoryControllerState>::SharedPtr publisher_impl_;
 
-  // The last time the state was issued
+  // Time when the state was last issued
   rclcpp::Time last_state_published_time_;
 };
 

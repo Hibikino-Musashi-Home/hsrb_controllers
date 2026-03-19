@@ -38,20 +38,20 @@ DAMAGE.
 namespace {
 
 // Default goal tolerance [m]
-const double kDefaultDistanceGoalTolerance = 0.003;
+const double kDefaultDistanceGoalTolerance = 0.005;
 // Default stall detection speed threshold [rad/s]
 const double kDefaultStallVelocityThreshold = 0.05;
-// Default arrival determination time [s]
-const double kDefaultDistanceControlStallTimeout = 1.0;
-// Default opening control P gain
+// Default arrival judgment time [s]
+const double kDefaultDistanceControlStallTimeout = 1.3;
+// Default opening width control P gain
 const double kDefaultDistanceControlPgain = 2.0;
-// Default opening control I gain
-const double kDefaultDistanceControlIgain = 0.5;
-// Default opening control D gain
+// Default opening width control I gain
+const double kDefaultDistanceControlIgain = 0.0;
+// Default opening width control D gain
 const double kDefaultDistanceControlDgain = 2.5;
-// Default hand upper angle [rad]
+// Default hand upper limit angle [rad]
 const double kDefaultHandMotorJointMax = 1.2;
-// Default hand lower angle [rad]
+// Default hand lower limit angle [rad]
 const double kDefaultHandMotorJointMin = -0.5;
 
 }  // unnamed namespace
@@ -60,7 +60,7 @@ namespace hsrb_gripper_controller {
 
 /// Constructor
 HrhGripperSetDistanceAction::HrhGripperSetDistanceAction(HrhGripperController* controller)
-    : HrhGripperAction(controller, "~/set_distance", tmc_exxx_servo_motor_protocol::kDriveModeHandPosition),
+    : HrhGripperAction(controller, "/set_distance", tmc_exxx_servo_motor_protocol::kDriveModeHandPosition),
       goal_tolerance_(kDefaultDistanceGoalTolerance),
       stall_velocity_threshold_(kDefaultStallVelocityThreshold),
       distance_control_stall_timeout_(kDefaultDistanceControlStallTimeout),
@@ -70,13 +70,13 @@ HrhGripperSetDistanceAction::HrhGripperSetDistanceAction(HrhGripperController* c
       integrated_distance_error_(0.0),
       last_error_(0.0) {}
 
-/// Periodic update process
+/// Periodic update processing
 void HrhGripperSetDistanceAction::Update(const rclcpp::Time& time) {
   if (!IsActive() && *(stop_flag_buffer_.readFromRT())) {
     return;
   }
 
-  // Calculate the current distance between fingertips
+  // Calculate current fingertip distance
   double current_distance =
       distance_calculator_->GetDistanceFromPosition(controller_->GetCurrentPosition(),
                                                     controller_->GetLeftSpringPosition(),
@@ -90,15 +90,15 @@ void HrhGripperSetDistanceAction::Update(const rclcpp::Time& time) {
     active_goal_handle->setFeedback(feedback);
   }
 
-  // Calculate and set command values
+  // Calculate and set command value
   current_command_pos_ = GetCommandPos(current_distance);
   controller_->SetComandPosition(current_command_pos_);
 
-  // Determine success or failure
+  // Success or failure judgment
   CheckForSuccess(time, current_distance);
 }
 
-/// Cancel the ongoing action
+/// Cancel ongoing action
 void HrhGripperSetDistanceAction::PreemptActiveGoal() {
   HrhGripperAction::PreemptActiveGoal();
   stop_flag_buffer_.writeFromNonRT(true);
@@ -122,7 +122,7 @@ trajectory_msgs::msg::JointTrajectoryPoint HrhGripperSetDistanceAction::GetFeedb
   return feedback;
 }
 
-/// Implementation of action initialization
+/// Implement action initialization
 bool HrhGripperSetDistanceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) {
   // Set parameters
   goal_tolerance_ =
@@ -139,43 +139,45 @@ bool HrhGripperSetDistanceAction::InitImpl(const rclcpp_lifecycle::LifecycleNode
       GetNonNegativeParameter(node, "distance_control_dgain", kDefaultDistanceControlDgain);
   hand_motor_joint_max_ = GetParameter(node, "hand_motor_joint_max", kDefaultHandMotorJointMax);
   hand_motor_joint_min_ = GetParameter(node, "hand_motor_joint_min", kDefaultHandMotorJointMin);
+  std::string gripper_namespace = GetParameter(node, "namespace", "~");
 
   // Initialize member variables
   goal_buffer_.initRT(0.0);
   stop_flag_buffer_.initRT(true);
 
-  // Initialize class for opening calculation
+  // Initialize class for opening width calculation
   distance_calculator_ = std::make_shared<HrhGripperDistanceCalculator>();
   if (!distance_calculator_->InitializeHandSizeData(node)) {
     return false;
   }
 
-  // Calculate the upper and lower limits of the opening
+  // Calculate upper and lower limits of opening width
   distance_max_ = distance_calculator_->GetDistanceFromPosition(hand_motor_joint_max_);
   distance_min_ = distance_calculator_->GetDistanceFromPosition(hand_motor_joint_min_);
 
-  // Receive opening
+  // Receive opening width
+  std::string interface_name = gripper_namespace + "/command_distance";
   distance_command_sub_ = node->create_subscription<std_msgs::msg::Float32>(
-      "~/command_distance",
+      interface_name,
       1,
       std::bind(&HrhGripperSetDistanceAction::DistanceCommandCallback, this, std::placeholders::_1));
 
   return true;
 }
 
-/// Update the goal of the action
+/// Update action target
 void HrhGripperSetDistanceAction::UpdateActionImpl(
     const tmc_control_msgs::action::GripperSetDistance::Goal& goal) {
   SetCommandValue(goal.distance);
 }
 
-/// Calculate the target position from the error between the commanded value and the current value of the opening
+/// Calculate target position from error between command value and current value of opening width
 double HrhGripperSetDistanceAction::GetCommandPos(const double current_distance) {
-  // Calculate the error
+  // Calculate error
   const double ref_distance = *(goal_buffer_.readFromRT());
   const double error = ref_distance - current_distance;
 
-  // Command motion
+  // Motion command
   integrated_distance_error_ += error;
   double command_position = controller_->GetCurrentPosition()
                             + distance_control_pgain_ * error
@@ -187,14 +189,14 @@ double HrhGripperSetDistanceAction::GetCommandPos(const double current_distance)
   return std::max(std::min(command_position, hand_motor_joint_max_), hand_motor_joint_min_);
 }
 
-/// Determine success
+/// Success judgment
 void HrhGripperSetDistanceAction::CheckForSuccess(const rclcpp::Time& time, const double current_distance) {
   double current_velocity = controller_->GetCurrentVelocity();
   if (fabs(current_velocity) > stall_velocity_threshold_) {
-    // Determine if moving, update last moved time
+    // Determine as moving and update the last moved time
     last_movement_time_ = time;
   } else if ((time - last_movement_time_).seconds() > distance_control_stall_timeout_) {
-    // Determine stall state
+    // Determine as stall state
     auto result = std::make_shared<tmc_control_msgs::action::GripperSetDistance::Result>();
     result->distance = current_distance;
     result->stalled = true;
@@ -218,7 +220,7 @@ void HrhGripperSetDistanceAction::CheckForSuccess(const rclcpp::Time& time, cons
   }
 }
 
-/// Callback when opening command is received via topic
+/// Callback when opening width command is received via topic
 void HrhGripperSetDistanceAction::DistanceCommandCallback(const std_msgs::msg::Float32::SharedPtr msg) {
   controller_->PreemptActiveGoal();
   controller_->ChangeControlMode(shared_from_this());

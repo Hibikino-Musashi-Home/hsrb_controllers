@@ -26,7 +26,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file hrh_gripper_controller_output_position_control_test.cpp
-/// @brief Test of the HRH gripper controller
+/// @brief Test of HRH gripper controller
 #include <gtest/gtest.h>
 
 #include <hsrb_gripper_controller/hrh_gripper_follow_trajectory_action.hpp>
@@ -52,7 +52,7 @@ void HrhGripperControllerTest::SetUp() {
   hardware_->spring_r_position->set_current(0.05);
 }
 
-// Position control at the output joint position considering the spring joint
+// Position control at the output joint position considering spring joints
 TEST_F(HrhGripperControllerTest, FollowTrajectoryWithSpringJoint) {
   StartupController();
 
@@ -70,7 +70,7 @@ TEST_F(HrhGripperControllerTest, FollowTrajectoryWithSpringJoint) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined at the first update, so move the position near the target position after calling Update
+  // The trajectory is determined during the first update, so move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_positions;
@@ -91,7 +91,7 @@ TEST_F(HrhGripperControllerTest, FollowTrajectoryWithSpringJoint) {
   EXPECT_TRUE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
       controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 }
-// Position control where position correction due to overcurrent is performed
+// Position control with position correction due to overcurrent
 TEST_F(HrhGripperControllerTest, FollowTrajectoryWithOverCurrent) {
   StartupController();
 
@@ -110,7 +110,7 @@ TEST_F(HrhGripperControllerTest, FollowTrajectoryWithOverCurrent) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  // The trajectory is determined at the first update, so move the position near the target position after calling Update
+  // The trajectory is determined during the first update, so move the position near the target position after calling Update
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   std::vector<double> command_positions;

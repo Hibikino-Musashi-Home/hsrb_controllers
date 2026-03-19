@@ -35,6 +35,8 @@ DAMAGE.
 #define HSRB_BASE_CONTROLLERS_UTILS_HPP_
 
 #include <string>
+#include <utility>
+
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
@@ -52,9 +54,15 @@ auto GetParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
   }
 }
 
-// Get parameter that uses default value in case of non-positive
+// Get parameter using default value in case of non-positive
 double GetPositiveParameter(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node, const std::string& parameter_name,
                             double default_value);
+
+// Search for the minimum ratio using ternary search
+// Used only in omni_base_joint_controller.cpp, but placed in utils for easier testing
+using CostFunction = std::function<double(double)>;
+double TernarySearchMinRight(const CostFunction& cost_function, double epsilon);
+double TernarySearchMinLeft(const CostFunction& cost_function, double epsilon);
 
 }  // namespace hsrb_base_controllers
 

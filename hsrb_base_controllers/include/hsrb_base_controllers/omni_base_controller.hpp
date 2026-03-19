@@ -50,7 +50,7 @@ DAMAGE.
 
 namespace hsrb_base_controllers {
 
-/// Omnidirectional Cart Velocity Controller Class
+/// Omnidirectional Cart Speed Controller Class
 class OmniBaseController
     : public controller_interface::ControllerInterface,
       public IControllerCommandInterface {
@@ -61,24 +61,24 @@ class OmniBaseController
   // Controller Initialization
   controller_interface::CallbackReturn on_init() override;
 
-  // Setting the ros2_control Interface
+  // ros2_control Interface Configuration
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-  // Calculate and Update the Cart Joint Angular Velocity
+  // Calculate and Update Cart Joint Angular Velocity
   controller_interface::return_type update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
-  // Function called during configure
+  // Function Called During Configure
   controller_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
-  // Function called during activate
+  // Function Called During Activate
   controller_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
-  // Function called during deactivate
+  // Function Called During Deactivate
   controller_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
 
-  // Returns if commands can be received
+  // Returns Whether Commands Can Be Accepted
   bool IsAcceptable() override;
 
-  // Set Input Velocity Command
+  // Set Input Speed Command
   void UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) override;
 
   // Validate Input Trajectory Command
@@ -87,24 +87,30 @@ class OmniBaseController
   void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) override;
   // Reset Input Trajectory
   void ResetTrajectory() override;
+  // Interrupt Ongoing Goal
+  void PreemptActiveGoal() override;
 
  protected:
-  // Initialization other than ControllerInterface::init, division for testing
+  // Initialization Other Than ControllerInterface::init, Split for Testing
   bool InitImpl();
 
   // Tolerance for Trajectory Following
   SegmentTolerances default_tolerances_;
   SegmentTolerances active_tolerances_;
-  // Check of tolerances during trajectory following
-  // Returns a positive number to continue following, or error codes (0 ~ -5) from control_msgs/action/FollowJointTrajectory to stop following
+  // Check Tolerances During Trajectory Following
+  // Return Positive Number to Continue Following, Return Error Code (0 ~ -5) from control_msgs/action/FollowJointTrajectory to Stop Following
   int32_t CheckTorelances(const ControllerBaseState& state, bool before_last_point, double time_from_trajectory_end);
 
-  // Input Velocity Command Subscriber
+  // Input Speed Command Subscriber
   CommandVelocitySubscriber::Ptr velocity_subscriber_;
-  // Input Trajectory Command Subscriber
-  CommandTrajectorySubscriber::Ptr trajectory_subscriber_;
-  // Input Trajectory Action Command Server
-  TrajectoryActionServer::Ptr trajectory_action_;
+  // Cart Trajectory Command Subscriber
+  CommandTrajectorySubscriber::Ptr odom_trajectory_subscriber_;
+  // Turning Axis Trajectory Command Subscriber
+  CommandTrajectorySubscriber::Ptr roll_trajectory_subscriber_;
+  // Cart Trajectory Action Command Server
+  TrajectoryActionServer::Ptr odom_trajectory_action_;
+  // Turning Axis Trajectory Action Command Server
+  TrajectoryActionServer::Ptr roll_trajectory_action_;
 
   // Joint Controller
   OmniBaseJointControllerBase::Ptr joint_controller_;
@@ -113,13 +119,17 @@ class OmniBaseController
   BaseOdometry::Ptr base_odometry_;
   WheelOdometry::Ptr wheel_odometry_;
 
-  // Class for Calculating Cart Command Velocity
+  // Class to Calculate Cart Command Speed
   OmniBaseVelocityControl::Ptr velocity_control_;
-  OmniBaseTrajectoryControl::Ptr trajectory_control_;
+  OmniBaseOdomTrajectoryControl::Ptr odom_trajectory_control_;
+  OmniBaseRollTrajectoryControl::Ptr roll_trajectory_control_;
 
-  // Publishing Cart State
+  // Publish Cart State
   StatePublisher::Ptr joint_state_publisher_;
   StatePublisher::Ptr base_state_publisher_;
+
+  // Name of Turning Axis
+  std::string base_roll_joint_name_;
 };
 
 }  // namespace hsrb_base_controllers

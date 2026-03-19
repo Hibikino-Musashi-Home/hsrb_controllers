@@ -25,7 +25,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test of Hrh gripping control action
+/// @brief Test of Hrh grip control action
 
 #include <gtest/gtest.h>
 
@@ -65,7 +65,7 @@ TEST_F(SetDistanceActionTest, ActionSucceeded) {
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   EXPECT_NEAR(hardware_->position->command(),
-              (current_position + 2.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002),
+              (current_position + 2.0 * -0.002 + 0.0 * -0.002 + 2.5 * -0.002),
               kEpsilon);
 
   auto goal_handle = future_goal_handle.get();
@@ -84,10 +84,10 @@ TEST_F(SetDistanceActionTest, ActionAborted) {
   auto future_goal_handle = action_client_->async_send_goal(goal);
   rclcpp::spin_until_future_complete(node_, future_goal_handle);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1050));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1350));
 
   hardware_->velocity->set_current(0.04);
-  hardware_->position->set_current(distance_calculator_->GetPositionFromDistance(0.055));
+  hardware_->position->set_current(distance_calculator_->GetPositionFromDistance(0.057));
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
   auto goal_handle = future_goal_handle.get();
@@ -197,8 +197,8 @@ TEST_F(SetDistanceActionTest, StallVelocityThreshold) {
   EXPECT_FALSE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Wait for a short while because WaitForStatus above waits for 1 second
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // Wait a little since WaitForStatus above waits for 1 second
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
   hardware_->velocity->set_current(0.03);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
@@ -230,7 +230,7 @@ TEST_F(SetDistanceActionTest, StallTimeout) {
   EXPECT_FALSE((WaitForStatus<ActionType, rclcpp::node_interfaces::NodeBaseInterface::SharedPtr>(
     controller_, { node_->get_node_base_interface() }, goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)));
 
-  // Just wait for the remainder, since WaitForStatus above waits for 1 second
+  // Just wait for the remaining time since WaitForStatus above waits for 1 second
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
@@ -257,9 +257,9 @@ TEST_F(SetDistanceActionTest, DistanceControlPgain) {
   hardware_->position->set_current(current_position);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from gain and delta
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(),
-              (current_position + 1.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002),
+              (current_position + 1.0 * -0.002 + 0.0 * -0.002 + 2.5 * -0.002),
               kEpsilon);
 }
 
@@ -282,7 +282,7 @@ TEST_F(SetDistanceActionTest, DistanceControlIgain) {
   hardware_->position->set_current(current_position);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from gain and delta
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(),
               (current_position + 2.0 * -0.002 + 2.0 * -0.002 + 2.5 * -0.002),
               kEpsilon);
@@ -307,9 +307,9 @@ TEST_F(SetDistanceActionTest, DistanceControlDgain) {
   hardware_->position->set_current(current_position);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from gain and delta
+  // Derived from gain and difference
   EXPECT_NEAR(hardware_->position->command(),
-              (current_position + 2.0 * -0.002 + 0.5 * -0.002 + 1.0 * -0.002),
+              (current_position + 2.0 * -0.002 + 0.0 * -0.002 + 1.0 * -0.002),
               kEpsilon);
 }
 
@@ -336,7 +336,7 @@ TEST_F(SetDistanceActionTest, DistanceMaxThreashold) {
   hardware_->position->set_current(0.3);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from default gain and delta
+  // Derived from default gain and difference
   const auto last_command = hardware_->position->command();
   EXPECT_LT(distance_calculator_->GetDistanceFromPosition(last_command), 0.05);
 
@@ -369,7 +369,7 @@ TEST_F(SetDistanceActionTest, DistanceMinThreashold) {
   hardware_->position->set_current(0.5);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from default gain and delta
+  // Derived from default gain and difference
   const auto last_command = hardware_->position->command();
   EXPECT_GT(distance_calculator_->GetDistanceFromPosition(last_command), 0.05);
 
@@ -402,10 +402,10 @@ TEST_F(SetDistanceActionTest, AcceptDistanceTopic) {
   hardware_->position->set_current(current_position);
   controller_->update(node_->now(), rclcpp::Duration::from_seconds(0.1));
 
-  // Derived from default gain and delta
+  // Derived from default gain and difference
   const auto last_command = hardware_->position->command();
   EXPECT_NEAR(last_command,
-              (current_position + 2.0 * -0.002 + 0.5 * -0.002 + 2.5 * -0.002),
+              (current_position + 2.0 * -0.002 + 0.0 * -0.002 + 2.5 * -0.002),
               kEpsilon);
 }
 

@@ -64,14 +64,11 @@ class HrhGripperDistanceCalculator {
       double hand_motor_pos, double left_spring_proximal_joint_pos,
       double right_spring_proximal_joint_pos) const;
 
-  /// Calculate joint angles from fingertip distance
+  /// Calculation of joint angle from fingertip distance
   /// @return Joint angle [rad]
   double GetPositionFromDistance(double distance) const;
 
  private:
-  /// Get URDF
-  std::string GetRobotDescription(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node);
-
   /// Finger length [m]
   double proximal_to_distal_z_;
   double distance_palm_to_tip_;
@@ -98,7 +95,7 @@ class DistancePublisher {
   std::unique_ptr<RealtimePublisher> publisher_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_impl_;
 
-  // The last time fingertip distance was published
+  // The last time the fingertip distance was issued
   rclcpp::Time last_distance_published_time_;
 
   /// Fingertip distance calculator
