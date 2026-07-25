@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file omni_base_controller-test.cpp
-/// @brief Test for omnidirectional cart velocity controller
+/// @brief Test of omnidirectional cart speed controller
 
 #include <string>
 #include <vector>
@@ -58,7 +58,7 @@ constexpr double kWheelVelocityLimitThreshold = 8.5;
 constexpr double kYawVelocityLimitThreshold = 1.8;
 
 // Create test input trajectory
-trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
+trajectory_msgs::msg::JointTrajectory GetTestOdomTrajectory() {
   trajectory_msgs::msg::JointTrajectory trajectory;
   trajectory.joint_names = {"odom_x", "odom_y", "odom_t"};
 
@@ -75,9 +75,23 @@ trajectory_msgs::msg::JointTrajectory GetTestTrajectory() {
   return trajectory;
 }
 
+trajectory_msgs::msg::JointTrajectory GetTestRollTrajectory() {
+  trajectory_msgs::msg::JointTrajectory trajectory;
+  trajectory.joint_names = { "base_roll_joint" };
+
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = { 1.0 };
+  point.time_from_start = rclcpp::Duration(1, 0);
+  trajectory.points.push_back(point);
+
+  return trajectory;
+}
+
 }  // namespace
 
 namespace hsrb_base_controllers {
+
+using ActionType = control_msgs::action::FollowJointTrajectory;
 
 struct PositionHandle {
   using CommandHandleType = CommandPositionHandle;
@@ -93,6 +107,10 @@ class OmniBaseControllerTest : public ::testing::Test {
  public:
   void SetupController();
 
+  void TearDown() override {
+    controller_->release_interfaces();
+  }
+
  protected:
   std::shared_ptr<OmniBaseController> controller_;
   rclcpp_lifecycle::LifecycleNode::SharedPtr controller_node_;
@@ -101,6 +119,15 @@ class OmniBaseControllerTest : public ::testing::Test {
   TopicRelay<nav_msgs::msg::Odometry>::Ptr odom_relay_;
   SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>::Ptr state_counter_;
   rclcpp::Time last_update_time_;
+  SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>::Ptr joint_state_counter_;
+  SubscriptionCounter<nav_msgs::msg::Odometry>::Ptr wheel_odom_counter_;
+
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr odom_trajectory_publisher_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr roll_trajectory_publisher_;
+
+  rclcpp_action::Client<ActionType>::SharedPtr odom_action_client_;
+  rclcpp_action::Client<ActionType>::SharedPtr roll_action_client_;
 
   void SpinOnce(rclcpp::WallRate& rate, bool do_update = true);
 
@@ -110,6 +137,18 @@ class OmniBaseControllerTest : public ::testing::Test {
 
   template <typename Handle>
   void WaitForReady(typename std::shared_future<Handle>& future, rclcpp::WallRate& rate);
+
+  void StartCmdVelTopic();
+  void StartOdomTrajectoryTopic();
+  void StartRollTrajectoryTopic();
+  std::shared_ptr<rclcpp_action::ClientGoalHandle<ActionType>> StartOdomTrajectoryAction();
+  std::shared_ptr<rclcpp_action::ClientGoalHandle<ActionType>> StartRollTrajectoryAction();
+
+  void PreemptCmdVelTopic();
+  void PreemptOdomTrajectoryAction();
+  void PreemptOdomTrajectoryTopic();
+  void PreemptRollTrajectoryAction();
+  void PreemptRollTrajectoryTopic();
 };
 
 template<typename CommandHandleType>
@@ -142,6 +181,25 @@ void OmniBaseControllerTest<CommandHandleType>::SetupController() {
       client_node_, std::string(kControllerNodeName) + "/wheel_odom", "odom");
   state_counter_ = std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
       client_node_, std::string(kControllerNodeName) + "/state");
+  wheel_odom_counter_ = std::make_shared<SubscriptionCounter<nav_msgs::msg::Odometry>>(
+      client_node_, std::string(kControllerNodeName) + "/wheel_odom");
+  joint_state_counter_ = std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
+      client_node_, std::string(kControllerNodeName) + "/internal_state");
+
+  cmd_vel_publisher_ = client_node_->create_publisher<geometry_msgs::msg::Twist>(
+      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
+  odom_trajectory_publisher_ = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
+  roll_trajectory_publisher_ = client_node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      std::string(kControllerNodeName) + "/roll_joint_trajectory", rclcpp::SystemDefaultsQoS());
+
+  odom_action_client_ = rclcpp_action::create_client<ActionType>(
+      client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
+  roll_action_client_ = rclcpp_action::create_client<ActionType>(
+      client_node_, std::string(kControllerNodeName) + "/follow_roll_joint_trajectory");
+
+  EXPECT_TRUE(odom_action_client_->wait_for_action_server());
+  EXPECT_TRUE(roll_action_client_->wait_for_action_server());
 
   controller_node_ = controller_->get_node();
   last_update_time_ = controller_node_->get_clock()->now();
@@ -196,16 +254,256 @@ void OmniBaseControllerTest<CommandHandleType>::WaitForReady(
   }
 }
 
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::StartCmdVelTopic() {
+  geometry_msgs::msg::Twist command_velocity;
+  command_velocity.linear.x = -0.1;
+  command_velocity.linear.y = -0.05;
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  while (rclcpp::ok()) {
+    cmd_vel_publisher_->publish(command_velocity);
+    SpinOnce(loop_rate);
+
+    if ((std::abs(hardware_->l_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->r_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->steer_handle->command()) > 0.01)) {
+      break;
+    }
+  }
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::StartOdomTrajectoryTopic() {
+  auto trajectory = GetTestOdomTrajectory();
+
+  // No need for multiple points, so delete one
+  trajectory.points.pop_back();
+  odom_trajectory_publisher_->publish(trajectory);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  while (rclcpp::ok()) {
+    SpinOnce(loop_rate);
+
+    if ((std::abs(hardware_->l_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->r_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->steer_handle->command()) > 0.01)) {
+      break;
+    }
+  }
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::StartRollTrajectoryTopic() {
+  roll_trajectory_publisher_->publish(GetTestRollTrajectory());
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  while (rclcpp::ok()) {
+    SpinOnce(loop_rate);
+
+    if (std::abs(hardware_->steer_handle->command()) > 0.0) {
+      break;
+    }
+  }
+}
+
+template<typename CommandHandleType>
+std::shared_ptr<rclcpp_action::ClientGoalHandle<ActionType>>
+    OmniBaseControllerTest<CommandHandleType>::StartOdomTrajectoryAction() {
+  ActionType::Goal odom_goal;
+  odom_goal.trajectory = GetTestOdomTrajectory();
+
+  // No need for multiple points, so delete one
+  odom_goal.trajectory.points.pop_back();
+
+  auto future_goal_handle = odom_action_client_->async_send_goal(odom_goal);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  WaitForReady(future_goal_handle, loop_rate);
+
+  while (rclcpp::ok()) {
+    SpinOnce(loop_rate);
+
+    if ((std::abs(hardware_->l_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->r_wheel_handle->command()) > 0.01)
+     || (std::abs(hardware_->steer_handle->command()) > 0.01)) {
+      break;
+    }
+  }
+
+  auto goal_handle = future_goal_handle.get();
+  EXPECT_TRUE(goal_handle);
+  return goal_handle;
+}
+
+template<typename CommandHandleType>
+std::shared_ptr<rclcpp_action::ClientGoalHandle<ActionType>>
+    OmniBaseControllerTest<CommandHandleType>::StartRollTrajectoryAction() {
+  ActionType::Goal goal;
+  goal.trajectory = GetTestRollTrajectory();
+
+  auto future_goal_handle = roll_action_client_->async_send_goal(goal);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  WaitForReady(future_goal_handle, loop_rate);
+
+  while (rclcpp::ok()) {
+    SpinOnce(loop_rate);
+
+    if (std::abs(hardware_->steer_handle->command()) > 0.0) {
+      break;
+    }
+  }
+
+  auto goal_handle = future_goal_handle.get();
+  EXPECT_TRUE(goal_handle);
+  return goal_handle;
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::PreemptCmdVelTopic() {
+  geometry_msgs::msg::Twist command_velocity;
+  command_velocity.linear.x = -0.1;
+  command_velocity.linear.y = -0.1;
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 50; ++i) {
+    cmd_vel_publisher_->publish(command_velocity);
+    SpinOnce(loop_rate);
+  }
+
+  // Cannot interrupt with cmd_vel topic, so it won't reach the specified speed
+  auto base_state = state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.velocities.size(), 3);
+  EXPECT_GT(std::abs(-0.1 - base_state.actual.velocities[0]), kEpsilon);
+  EXPECT_GT(std::abs(-0.1 - base_state.actual.velocities[1]), kEpsilon);
+
+  // Since the trajectory is set to 1 second, keep it running for 1 second
+  for (int i = 0; i < 50; ++i) {
+    SpinOnce(loop_rate);
+  }
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::PreemptOdomTrajectoryAction() {
+  ActionType::Goal roll_goal;
+  roll_goal.trajectory = GetTestOdomTrajectory();
+  roll_goal.trajectory.points.clear();
+
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = {0.05, 0.05, 0.1};
+  point.velocities = {0.0, 0.0, 0.0};
+  point.time_from_start = rclcpp::Duration(1, 0);
+  roll_goal.trajectory.points.push_back(point);
+
+  auto future_goal_handle = odom_action_client_->async_send_goal(roll_goal);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  WaitForReady(future_goal_handle, loop_rate);
+
+  for (int i = 0; i < 100; ++i) {
+    SpinOnce(loop_rate);
+  }
+
+  auto base_state = state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.05, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.05, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 0.1, kEpsilon);
+
+  auto odom_goal_handle = future_goal_handle.get();
+  EXPECT_TRUE(odom_goal_handle.get());
+  EXPECT_TRUE(WaitForStatus<ActionType>(
+      odom_goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::PreemptOdomTrajectoryTopic() {
+  auto topic_msg = GetTestOdomTrajectory();
+  topic_msg.points.clear();
+
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = {0.05, 0.05, 0.1};
+  point.velocities = {0.0, 0.0, 0.0};
+  point.time_from_start = rclcpp::Duration(1, 0);
+  topic_msg.points.push_back(point);
+
+  odom_trajectory_publisher_->publish(topic_msg);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 100; ++i) {
+    SpinOnce(loop_rate);
+  }
+
+  auto base_state = state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.05, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.05, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 0.1, kEpsilon);
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::PreemptRollTrajectoryAction() {
+  ActionType::Goal roll_goal;
+  roll_goal.trajectory = GetTestRollTrajectory();
+  roll_goal.trajectory.points.clear();
+
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = { 1.5 };
+  point.time_from_start = rclcpp::Duration(1, 0);
+  roll_goal.trajectory.points.push_back(point);
+
+  auto future_goal_handle = roll_action_client_->async_send_goal(roll_goal);
+
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  WaitForReady(future_goal_handle, loop_rate);
+
+  // With the exact loop count, there were cases where the state could not be received, so loop a bit more
+  for (int i = 0; i < 110; ++i) {
+    SpinOnce(loop_rate);
+  }
+
+  // Check only the turning axis
+  auto joint_state = joint_state_counter_->last_msg();
+  ASSERT_EQ(joint_state.actual.positions.size(), 3);
+  EXPECT_NEAR(joint_state.actual.positions[2], 1.5, 0.05);
+
+  auto roll_goal_handle = future_goal_handle.get();
+  EXPECT_TRUE(roll_goal_handle.get());
+  EXPECT_TRUE(WaitForStatus<ActionType>(
+      roll_goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+}
+
+template<typename CommandHandleType>
+void OmniBaseControllerTest<CommandHandleType>::PreemptRollTrajectoryTopic() {
+  auto topic_msg = GetTestRollTrajectory();
+  topic_msg.points.clear();
+
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = { 1.5 };
+  point.time_from_start = rclcpp::Duration(1, 0);
+  topic_msg.points.push_back(point);
+
+  roll_trajectory_publisher_->publish(topic_msg);
+
+  // With the exact loop count, there were cases where the state could not be received, so loop a bit more
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 110; ++i) {
+    SpinOnce(loop_rate);
+  }
+
+  // Check only the turning axis
+  auto joint_state = joint_state_counter_->last_msg();
+  ASSERT_EQ(joint_state.actual.positions.size(), 3);
+  EXPECT_NEAR(joint_state.actual.positions[2], 1.5, 0.05);
+}
+
 typedef ::testing::Types<PositionHandle, VelocityHandle> TestTypes;
 TYPED_TEST_SUITE(OmniBaseControllerTest, TestTypes);
 
-/// Command a constant velocity to x, y and move the cart
+/// Give constant speed command to x, y and move the cart
 TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
   this->SetupController();
-  auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
-  auto wheel_odom_counter = std::make_shared<SubscriptionCounter<nav_msgs::msg::Odometry>>(
-      this->client_node_, std::string(kControllerNodeName) + "/wheel_odom");
 
   geometry_msgs::msg::Twist command_velocity;
   command_velocity.linear.x = -0.1;
@@ -213,7 +511,7 @@ TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 199; ++i) {
-    publisher->publish(command_velocity);
+    this->cmd_vel_publisher_->publish(command_velocity);
     this->SpinOnce(loop_rate);
   }
 
@@ -236,7 +534,7 @@ TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
   EXPECT_NEAR(base_state.actual.velocities[1], -0.05, kEpsilon);
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
 
-  auto wheel_odom = wheel_odom_counter->last_msg();
+  auto wheel_odom = this->wheel_odom_counter_->last_msg();
   EXPECT_EQ(wheel_odom.header.frame_id, "odom");
   EXPECT_EQ(wheel_odom.child_frame_id, "base_footprint_wheel");
   EXPECT_NEAR(wheel_odom.pose.pose.position.x, -0.2, kEpsilon);
@@ -248,12 +546,11 @@ TYPED_TEST(OmniBaseControllerTest, CommandVelocity) {
   EXPECT_NEAR(wheel_odom.twist.twist.angular.z, 0.0, kEpsilon);
 }
 
-/// Check whether the trajectory input via topics is being correctly tracked
-TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
+/// Whether it can correctly follow the test trajectory input via topic
+TYPED_TEST(OmniBaseControllerTest, SendOdomTrajectoryTopic) {
   this->SetupController();
-  auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
-      std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
-  publisher->publish(GetTestTrajectory());
+
+  this->odom_trajectory_publisher_->publish(GetTestOdomTrajectory());
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
@@ -268,7 +565,7 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
   for (int i = 0; i < 100; ++i) {
     this->SpinOnce(loop_rate);
 
-    // Check as it originally existed in the test
+    // Originally existed in the test, so check it just in case
     auto state = this->state_counter_->last_msg();
     for (int i = 0; i < 3; ++i) {
       ASSERT_LT(fabs(state.error.positions[i]),  kPositionErrorThreshold);
@@ -287,16 +584,34 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kVelocityErrorThreshold);
 }
 
-/// Check whether the trajectory input via actions is being correctly tracked
-TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
+/// Whether it can correctly follow the test trajectory input via topic
+TYPED_TEST(OmniBaseControllerTest, SendRollTrajectoryTopic) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
+  this->roll_trajectory_publisher_->publish(GetTestRollTrajectory());
+
+  // With the exact loop count, there were cases where the state could not be received, so loop a bit more
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 110; ++i) {
+    this->SpinOnce(loop_rate);
+  }
+  auto joint_state = this->joint_state_counter_->last_msg();
+  ASSERT_EQ(joint_state.actual.positions.size(), 3);
+  EXPECT_NEAR(joint_state.actual.positions[0], 0.0, kEpsilon);
+  EXPECT_NEAR(joint_state.actual.positions[1], 0.0, kEpsilon);
+  EXPECT_NEAR(joint_state.actual.positions[2], 1.0, 0.05);
+
+  ASSERT_EQ(joint_state.actual.velocities.size(), 3);
+  EXPECT_NEAR(joint_state.actual.velocities[0], 0.0, kVelocityErrorThreshold);
+  EXPECT_NEAR(joint_state.actual.velocities[1], 0.0, kVelocityErrorThreshold);
+  EXPECT_NEAR(joint_state.actual.velocities[2], 0.0, kVelocityErrorThreshold);
+}
+
+/// Whether it can correctly follow the test trajectory input via action
+TYPED_TEST(OmniBaseControllerTest, SendOdomTrajectoryAction) {
+  this->SetupController();
 
   ActionType::Goal goal;
-  goal.trajectory = GetTestTrajectory();
+  goal.trajectory = GetTestOdomTrajectory();
 
   ActionType::Result result;
   auto result_callback = [&result](const rclcpp_action::ClientGoalHandle<ActionType>::WrappedResult& _result) {
@@ -312,7 +627,7 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
   send_goal_options.result_callback = result_callback;
   send_goal_options.feedback_callback = feedback_callback;
 
-  auto future_goal_handle = action_client->async_send_goal(goal, send_goal_options);
+  auto future_goal_handle = this->odom_action_client_->async_send_goal(goal, send_goal_options);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
@@ -357,7 +672,8 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 
   this->SpinOnce(loop_rate);
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL);
@@ -369,13 +685,75 @@ TYPED_TEST(OmniBaseControllerTest, SendTrajectoryAction) {
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 }
 
-/// Check whether trajectory generation and tracking work properly even when command values exceeding PI in rotation are input
+/// Whether it can correctly follow the test trajectory input via action
+TYPED_TEST(OmniBaseControllerTest, SendRollTrajectoryAction) {
+  this->SetupController();
+
+  ActionType::Goal goal;
+  goal.trajectory = GetTestRollTrajectory();
+
+  ActionType::Result result;
+  auto result_callback = [&result](const rclcpp_action::ClientGoalHandle<ActionType>::WrappedResult& _result) {
+    result = *_result.result;
+  };
+  ActionType::Feedback feedback;
+  auto feedback_callback = [&feedback](rclcpp_action::ClientGoalHandle<ActionType>::SharedPtr,
+                                       const std::shared_ptr<const ActionType::Feedback> _feedback) {
+    feedback = *_feedback;
+  };
+
+  auto send_goal_options = rclcpp_action::Client<ActionType>::SendGoalOptions();
+  send_goal_options.result_callback = result_callback;
+  send_goal_options.feedback_callback = feedback_callback;
+
+  auto future_goal_handle = this->roll_action_client_->async_send_goal(goal, send_goal_options);
+
+  // With the exact loop count, there were cases where the state could not be received, so loop a bit more
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 110; ++i) {
+    this->SpinOnce(loop_rate);
+  }
+
+  auto base_state = this->joint_state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 1.0, 0.05);
+
+  ASSERT_EQ(base_state.actual.velocities.size(), 3);
+  EXPECT_NEAR(base_state.actual.velocities[0], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.velocities[1], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
+
+  ASSERT_EQ(feedback.actual.positions.size(), 1);
+  EXPECT_NEAR(feedback.actual.positions[0], 1.0, 0.1);
+
+  EXPECT_EQ(feedback.actual.velocities.size(), 1);
+  EXPECT_TRUE(feedback.actual.accelerations.empty());
+
+  ASSERT_EQ(feedback.desired.positions.size(), 1);
+  EXPECT_NEAR(feedback.desired.positions[0], 1.0, 0.05);
+
+  EXPECT_EQ(feedback.desired.velocities.size(), 1);
+  EXPECT_EQ(feedback.desired.accelerations.size(), 1);
+
+  ASSERT_EQ(feedback.error.positions.size(), 1);
+  EXPECT_NEAR(feedback.error.positions[0], 0.0, 0.05);
+
+  EXPECT_EQ(feedback.error.velocities.size(), 1);
+  EXPECT_TRUE(feedback.error.accelerations.empty());
+
+  auto goal_handle = future_goal_handle.get();
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+
+  this->SpinOnce(loop_rate);
+  EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL);
+}
+
+/// Whether it can appropriately generate and follow a trajectory even if a command value exceeding PI in the rotation direction is input
 TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
   goal.trajectory.joint_names = {"odom_x", "odom_y", "odom_t"};
@@ -393,7 +771,7 @@ TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
   point.time_from_start = rclcpp::Duration(5, 0);
   goal.trajectory.points.push_back(point);
 
-  auto future_goal_handle = action_client->async_send_goal(goal);
+  auto future_goal_handle = this->odom_action_client_->async_send_goal(goal);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 300; ++i) {
@@ -415,22 +793,21 @@ TYPED_TEST(OmniBaseControllerTest, OverPISteerTrajectory) {
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 
   base_state = this->state_counter_->last_msg();
   ASSERT_EQ(base_state.actual.positions.size(), 3);
   EXPECT_NEAR(base_state.actual.positions[2], -2.5, kEpsilon);
 }
 
-/// Check whether it stops correctly when the trajectory input via topics cannot be tracked
+/// Whether it can correctly stop when it cannot follow the test trajectory input via topic
 TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   this->SetupController();
-  auto publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
-      std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
 
-  auto trajectory = GetTestTrajectory();
+  auto trajectory = GetTestOdomTrajectory();
   trajectory.points[0].positions[0] = 5.0;
-  publisher->publish(trajectory);
+  this->odom_trajectory_publisher_->publish(trajectory);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   double max_error = 0.0;
@@ -444,7 +821,7 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   }
   EXPECT_GT(max_error, 0.5);
 
-  // A suitable threshold to check that it was stopped before much progress could be made
+  // Appropriate threshold to check that it stopped without much progress
   auto base_state = this->state_counter_->last_msg();
   EXPECT_LT(base_state.actual.positions[0], 0.2);
 
@@ -454,16 +831,12 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInTopic) {
   EXPECT_NEAR(base_state.actual.velocities[2], 0.0, kEpsilon);
 }
 
-/// Check whether it stops correctly when the trajectory input via actions cannot be tracked
+/// Whether it can correctly stop when it cannot follow the test trajectory input via action
 TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
-  goal.trajectory = GetTestTrajectory();
+  goal.trajectory = GetTestOdomTrajectory();
   goal.trajectory.points[0].positions[0] = 5.0;
 
   ActionType::Result result;
@@ -473,7 +846,7 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
   auto send_goal_options = rclcpp_action::Client<ActionType>::SendGoalOptions();
   send_goal_options.result_callback = result_callback;
 
-  auto future_goal_handle = action_client->async_send_goal(goal, send_goal_options);
+  auto future_goal_handle = this->odom_action_client_->async_send_goal(goal, send_goal_options);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 100; ++i) {
@@ -481,22 +854,19 @@ TYPED_TEST(OmniBaseControllerTest, StopFollowingInAction) {
   }
 
   auto goal_handle = future_goal_handle.get();
-  EXPECT_TRUE(this-> template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
+  EXPECT_TRUE(this-> template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_ABORTED));
 
   this->SpinOnce(loop_rate);
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED);
 }
 
-/// Check whether it correctly returns a failure result when accuracy is insufficient for the goal of the test trajectory input via actions
+/// Whether it can return a correct failure result when the accuracy is insufficient for the goal of the test trajectory input via action
 TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
-  goal.trajectory = GetTestTrajectory();
+  goal.trajectory = GetTestOdomTrajectory();
 
   ActionType::Result result;
   auto result_callback = [&result](const rclcpp_action::ClientGoalHandle<ActionType>::WrappedResult& _result) {
@@ -505,7 +875,7 @@ TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
   auto send_goal_options = rclcpp_action::Client<ActionType>::SendGoalOptions();
   send_goal_options.result_callback = result_callback;
 
-  auto future_goal_handle = action_client->async_send_goal(goal, send_goal_options);
+  auto future_goal_handle = this->odom_action_client_->async_send_goal(goal, send_goal_options);
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 200; ++i) {
@@ -520,52 +890,58 @@ TYPED_TEST(OmniBaseControllerTest, OverGoalTolerance) {
   EXPECT_EQ(result.error_code, control_msgs::action::FollowJointTrajectory::Result::GOAL_TOLERANCE_VIOLATED);
 }
 
-/// Action cancellation test
-TYPED_TEST(OmniBaseControllerTest, ActionCancel) {
+/// Test of action cancellation
+TYPED_TEST(OmniBaseControllerTest, OdomActionCancel) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
-  ActionType::Goal goal;
-  goal.trajectory = GetTestTrajectory();
+  // Start cart trajectory action
+  auto goal_handle = this->StartOdomTrajectoryAction();
 
-  auto future_goal_handle = action_client->async_send_goal(goal);
-
+  // Cancel action
+  auto future_cancel = this->odom_action_client_->async_cancel_goal(goal_handle);
   rclcpp::WallRate loop_rate(kUpdateFrequency);
-  this->WaitForReady(future_goal_handle, loop_rate);
-
-  auto goal_handle = future_goal_handle.get();
-  auto future_cancel = action_client->async_cancel_goal(goal_handle);
   this->WaitForReady(future_cancel, loop_rate);
 
   auto cancel_response = future_cancel.get();
   EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
 
-  EXPECT_TRUE(this->template WaitForStatus<ActionType>(goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
-/// Send a Goal twice in succession (the prior one is canceled by ClearActiveGoal)
-TYPED_TEST(OmniBaseControllerTest, SendGoalTwice) {
+/// Test of action cancellation
+TYPED_TEST(OmniBaseControllerTest, RollActionCancel) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
-  ActionType::Goal goal;
-  goal.trajectory = GetTestTrajectory();
+  // Start turning axis trajectory action
+  auto goal_handle = this->StartRollTrajectoryAction();
 
-  auto future_goal_handle_first = action_client->async_send_goal(goal);
-
+  // Cancel action
+  auto future_cancel = this->roll_action_client_->async_cancel_goal(goal_handle);
   rclcpp::WallRate loop_rate(kUpdateFrequency);
-  this->WaitForReady(future_goal_handle_first, loop_rate);
+  this->WaitForReady(future_cancel, loop_rate);
 
-  auto future_goal_handle_second = action_client->async_send_goal(goal);
+  auto cancel_response = future_cancel.get();
+  EXPECT_EQ(cancel_response->return_code, action_msgs::srv::CancelGoal::Response::ERROR_NONE);
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Send Goal twice in succession (the previous one is canceled by ClearActiveGoal)
+TYPED_TEST(OmniBaseControllerTest, SendOdomGoalTwice) {
+  this->SetupController();
+
+  // Start cart trajectory action
+  auto goal_handle_first = this->StartOdomTrajectoryAction();
+
+  // Resend cart trajectory action
+  ActionType::Goal goal;
+  goal.trajectory = GetTestOdomTrajectory();
+  auto future_goal_handle_second = this->odom_action_client_->async_send_goal(goal);
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
   this->WaitForReady(future_goal_handle_second, loop_rate);
 
-  auto goal_handle_first = future_goal_handle_first.get();
   EXPECT_TRUE(this->template WaitForStatus<ActionType>(
       goal_handle_first, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 
@@ -574,7 +950,29 @@ TYPED_TEST(OmniBaseControllerTest, SendGoalTwice) {
       goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
 }
 
-/// Check whether configure fails when cart coordinate axis parameters are missing
+/// Send Goal twice in succession (the previous one is canceled by ClearActiveGoal)
+TYPED_TEST(OmniBaseControllerTest, SendRollGoalTwice) {
+  this->SetupController();
+
+  // Start turning axis trajectory action
+  auto goal_handle_first = this->StartRollTrajectoryAction();
+
+  // Resend turning axis trajectory action
+  ActionType::Goal goal;
+  goal.trajectory = GetTestRollTrajectory();
+  auto future_goal_handle_second = this->roll_action_client_->async_send_goal(goal);
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  this->WaitForReady(future_goal_handle_second, loop_rate);
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle_first, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+
+  auto goal_handle_second = future_goal_handle_second.get();
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle_second, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+}
+
+/// Whether configure fails when there is no cart coordinate axis parameter
 TYPED_TEST(OmniBaseControllerTest, NoOdomCoordParameter) {
   this->controller_ = std::make_shared<OmniBaseController>();
 
@@ -596,17 +994,13 @@ TYPED_TEST(OmniBaseControllerTest, NoOdomCoordParameter) {
   EXPECT_EQ(this->controller_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
 }
 
-/// Send a Goal without setting a trajectory
-TYPED_TEST(OmniBaseControllerTest, EmptyTrajectoryGoal) {
+/// Send Goal without setting trajectory
+TYPED_TEST(OmniBaseControllerTest, EmptyOdomTrajectoryGoal) {
   this->SetupController();
-  using ActionType = control_msgs::action::FollowJointTrajectory;
-  auto action_client = rclcpp_action::create_client<ActionType>(
-      this->client_node_, std::string(kControllerNodeName) + "/follow_joint_trajectory");
-  EXPECT_TRUE(action_client->wait_for_action_server());
 
   ActionType::Goal goal;
 
-  auto future_goal_handle = action_client->async_send_goal(goal);
+  auto future_goal_handle = this->odom_action_client_->async_send_goal(goal);
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 10; ++i) {
     this->SpinOnce(loop_rate);
@@ -615,38 +1009,48 @@ TYPED_TEST(OmniBaseControllerTest, EmptyTrajectoryGoal) {
   EXPECT_EQ(goal_handle, nullptr);
 }
 
-/// Check whether speed limitation is applied when the speed command exceeds the threshold
+/// Send Goal without setting trajectory
+TYPED_TEST(OmniBaseControllerTest, EmptyRollTrajectoryGoal) {
+  this->SetupController();
+
+  ActionType::Goal goal;
+
+  auto future_goal_handle = this->roll_action_client_->async_send_goal(goal);
+  rclcpp::WallRate loop_rate(kUpdateFrequency);
+  for (int i = 0; i < 10; ++i) {
+    this->SpinOnce(loop_rate);
+  }
+  auto goal_handle = future_goal_handle.get();
+  EXPECT_EQ(goal_handle, nullptr);
+}
+
+/// Whether speed limit is applied when speed command exceeds threshold
 TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
   this->SetupController();
-  auto publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
-  auto internal_state_counter =
-      std::make_shared<SubscriptionCounter<control_msgs::msg::JointTrajectoryControllerState>>(
-          this->client_node_, std::string(kControllerNodeName) + "/internal_state");
 
   for (int32_t i = 0; i < 4; i++) {
     geometry_msgs::msg::Twist command_velocity;
     switch (i) {
       case 0:
-        // Positive speed exceeding the limit in the x-direction
+        // Positive speed exceeding limit in x direction
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 0.0;
         break;
       case 1:
-        // Negative speed exceeding the limit in the y-direction
-        command_velocity.linear.x = 0.0;
-        command_velocity.linear.y = -10.0;
-        command_velocity.angular.z = 0.0;
-        break;
-      case 2:
-        // Speed exceeding the limit in the yaw direction
+        // Negative speed exceeding limit in y direction
+       command_velocity.linear.x = 0.0;
+       command_velocity.linear.y = -10.0;
+       command_velocity.angular.z = 0.0;
+       break;
+     case 2:
+        // Speed exceeding limit in yaw direction
         command_velocity.linear.x = 0.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
         break;
       case 3:
-        // Speed exceeding the limit in x and yaw directions (check if the limit is applied twice)
+        // Speed exceeding limit in x, yaw direction (whether limit is applied twice)
         command_velocity.linear.x = 10.0;
         command_velocity.linear.y = 0.0;
         command_velocity.angular.z = 40.0;
@@ -656,35 +1060,59 @@ TYPED_TEST(OmniBaseControllerTest, VelocityLimit) {
     }
 
     rclcpp::WallRate loop_rate(kUpdateFrequency);
-    for (int i = 0; i < 100; ++i) {
-      publisher->publish(command_velocity);
+    for (int j = 0; j < 100; ++j) {
+      this->cmd_vel_publisher_->publish(command_velocity);
       this->SpinOnce(loop_rate);
 
-      auto state = internal_state_counter->last_msg();
-      if (state.desired.velocities.size() == 3) {
-        // Allow a buffer of one ten-thousandth to account for decimal point errors
-        ASSERT_LE(std::abs(state.desired.velocities[0]), kWheelVelocityLimitThreshold * 1.0001);
-        ASSERT_LE(std::abs(state.desired.velocities[1]), kWheelVelocityLimitThreshold * 1.0001);
-        ASSERT_LE(std::abs(state.desired.velocities[2]), kYawVelocityLimitThreshold * 1.0001);
+      auto state = this->joint_state_counter_->last_msg();
+      if (state.output.velocities.size() == 3) {
+        // Compare with a buffer of 1/10000 considering decimal point error
+        ASSERT_LE(std::abs(state.output.velocities[0]), kWheelVelocityLimitThreshold * 1.0001);
+        ASSERT_LE(std::abs(state.output.velocities[1]), kWheelVelocityLimitThreshold * 1.0001);
+        ASSERT_LE(std::abs(state.output.velocities[2]), kYawVelocityLimitThreshold * 1.0001);
       }
+    }
+
+    if (i == 0) {
+      // Check the difference between desired and output with easy-to-understand command values
+      auto joint_state = this->joint_state_counter_->last_msg();
+      ASSERT_EQ(joint_state.desired.velocities.size(), 3);
+      // 10.0 / 0.04 = 250.0
+      ASSERT_NEAR(joint_state.desired.velocities[0], 250.0, kEpsilon);
+      ASSERT_NEAR(joint_state.desired.velocities[1], 250.0, kEpsilon);
+      ASSERT_NEAR(joint_state.desired.velocities[2], 0.0, kEpsilon);
+
+      ASSERT_EQ(joint_state.output.velocities.size(), 3);
+      ASSERT_NEAR(joint_state.output.velocities[0], kWheelVelocityLimitThreshold, kEpsilon);
+      ASSERT_NEAR(joint_state.output.velocities[1], kWheelVelocityLimitThreshold, kEpsilon);
+      ASSERT_NEAR(joint_state.output.velocities[2], 0.0, kEpsilon);
+
+      auto base_state = this->state_counter_->last_msg();
+      ASSERT_EQ(base_state.desired.velocities.size(), 3);
+      ASSERT_NEAR(base_state.desired.velocities[0], 10.0, kEpsilon);
+      ASSERT_NEAR(base_state.desired.velocities[1], 0.0, kEpsilon);
+      ASSERT_NEAR(base_state.desired.velocities[2], 0.0, kEpsilon);
+
+      ASSERT_EQ(base_state.output.velocities.size(), 3);
+      ASSERT_NEAR(base_state.output.velocities[0], kWheelVelocityLimitThreshold * 0.04, kEpsilon);
+      ASSERT_NEAR(base_state.output.velocities[1], 0.0, kEpsilon);
+      ASSERT_NEAR(base_state.output.velocities[2], 0.0, kEpsilon);
     }
   }
 }
 
-/// Test for switching cart control methods
+/// Test of cart control method switching
 TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   this->SetupController();
-  // Start with velocity
-  auto vel_publisher = this->client_node_->template create_publisher<geometry_msgs::msg::Twist>(
-      std::string(kControllerNodeName) + "/cmd_vel", rclcpp::SystemDefaultsQoS());
 
+  // First, speed
   geometry_msgs::msg::Twist command_velocity;
   command_velocity.linear.x = 0.1;
   command_velocity.linear.y = 0.1;
 
   rclcpp::WallRate loop_rate(kUpdateFrequency);
   for (int i = 0; i < 200; ++i) {
-    vel_publisher->publish(command_velocity);
+    this->cmd_vel_publisher_->publish(command_velocity);
     this->SpinOnce(loop_rate);
   }
 
@@ -694,10 +1122,8 @@ TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // Transition to trajectory
-  auto trj_publisher = this->client_node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
-      std::string(kControllerNodeName) + "/joint_trajectory", rclcpp::SystemDefaultsQoS());
-  trj_publisher->publish(GetTestTrajectory());
+  // From here, trajectory
+  this->odom_trajectory_publisher_->publish(GetTestOdomTrajectory());
 
   for (int i = 0; i < 100; ++i) {
     this->SpinOnce(loop_rate);
@@ -719,9 +1145,9 @@ TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
 
-  // Return to velocity
+  // Again, speed
   for (int i = 0; i < 200; ++i) {
-    vel_publisher->publish(command_velocity);
+    this->cmd_vel_publisher_->publish(command_velocity);
     this->SpinOnce(loop_rate);
   }
 
@@ -730,6 +1156,280 @@ TYPED_TEST(OmniBaseControllerTest, ChangeControlMethod) {
   EXPECT_NEAR(base_state.actual.positions[0], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[1], 0.2, kEpsilon);
   EXPECT_NEAR(base_state.actual.positions[2], 0.0, kEpsilon);
+}
+
+/// Test of cart control method switching (from speed command topic to cart trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomVelocityTopicToOdomTrajectoryTopic) {
+  this->SetupController();
+
+  // Start speed command topic
+  this->StartCmdVelTopic();
+
+  // Interrupt with cart trajectory topic
+  this->PreemptOdomTrajectoryTopic();
+}
+
+/// Test of cart control method switching (from speed command topic to cart trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomVelocityTopicToOdomTrajectoryAction) {
+  this->SetupController();
+
+  // Start speed command topic
+  this->StartCmdVelTopic();
+
+  // Interrupt with cart trajectory action
+  this->PreemptOdomTrajectoryAction();
+}
+
+/// Test of cart control method switching (from speed command topic to turning axis trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomVelocityTopicToRollTrajectoryTopic) {
+  this->SetupController();
+
+  // Start speed command topic
+  this->StartCmdVelTopic();
+
+  // Interrupt with turning axis trajectory topic
+  this->PreemptRollTrajectoryTopic();
+}
+
+/// Test of cart control method switching (from speed command topic to turning axis trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomVelocityTopicToRollTrajectoryAction) {
+  this->SetupController();
+
+  // Start speed command topic
+  this->StartCmdVelTopic();
+
+  // Interrupt with turning axis trajectory action
+  this->PreemptRollTrajectoryAction();
+}
+
+/// Test of cart control method switching (from cart trajectory topic to speed command topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryTopicToOdomVelocityTopic) {
+  this->SetupController();
+
+  // Start cart trajectory topic
+  this->StartOdomTrajectoryTopic();
+
+  // Send speed command topic
+  this->PreemptCmdVelTopic();
+
+  // Speed command is ignored and moves along the trajectory
+  auto base_state = this->state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.1, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.1, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 0.3, kEpsilon);
+}
+
+/// Test of cart control method switching (from cart trajectory topic to cart trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryTopicToOdomTrajectoryAction) {
+  this->SetupController();
+
+  // Start cart trajectory topic
+  this->StartOdomTrajectoryTopic();
+
+  // Interrupt with cart trajectory action
+  this->PreemptOdomTrajectoryAction();
+}
+
+/// Test of cart control method switching (from cart trajectory topic to turning axis trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryTopicToRollTrajectoryAction) {
+  this->SetupController();
+
+  // Start cart trajectory topic
+  this->StartOdomTrajectoryTopic();
+
+  // Interrupt with turning axis trajectory action
+  this->PreemptRollTrajectoryAction();
+}
+
+/// Test of cart control method switching (from cart trajectory topic to turning axis trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryTopicToRollTrajectoryTopic) {
+  this->SetupController();
+
+  // Start cart trajectory topic
+  this->StartOdomTrajectoryTopic();
+
+  // Interrupt with turning axis trajectory topic
+  this->PreemptRollTrajectoryTopic();
+}
+
+/// Test of cart control method switching (from cart trajectory action to cart speed command topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryActionToOdomVelocityTopic) {
+  this->SetupController();
+
+  // Start cart trajectory action
+  auto goal_handle = this->StartOdomTrajectoryAction();
+
+  // Send speed command topic
+  this->PreemptCmdVelTopic();
+
+  // Speed command is ignored and moves along the trajectory
+  auto base_state = this->state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.1, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.1, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 0.3, kEpsilon);
+
+  // Action succeeds
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+}
+
+/// Test of cart control method switching (from cart trajectory action to cart trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryActionToOdomTrajectoryTopic) {
+  this->SetupController();
+
+  // Start cart trajectory action
+  auto goal_handle = this->StartOdomTrajectoryAction();
+
+  // Interrupt with cart trajectory topic
+  this->PreemptOdomTrajectoryTopic();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Test of cart control method switching (from cart trajectory action to turning axis trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryActionToRollTrajectoryAction) {
+  this->SetupController();
+
+  // Start cart trajectory action
+  auto odom_goal_handle = this->StartOdomTrajectoryAction();
+
+  // Interrupt with turning axis trajectory action
+  this->PreemptRollTrajectoryAction();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      odom_goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Test of cart control method switching (from cart trajectory action to turning axis trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodOdomTrajectoryActionToRollTrajectoryTopic) {
+  this->SetupController();
+
+  // Start cart trajectory action
+  auto goal_handle = this->StartOdomTrajectoryAction();
+
+  // Interrupt with turning axis trajectory topic
+  this->PreemptRollTrajectoryTopic();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Test of cart control method switching (from turning axis trajectory topic to cart speed command topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryTopicToOdomVelocityTopic) {
+  this->SetupController();
+
+  // Start turning axis trajectory topic
+  this->StartRollTrajectoryTopic();
+
+  // Send speed command topic
+  this->PreemptCmdVelTopic();
+
+  // Speed command is ignored, cart position does not move, and moves along the turning axis position trajectory
+  auto base_state = this->joint_state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 1.0, kEpsilon);
+}
+
+/// Test of cart control method switching (from turning axis trajectory topic to cart trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryTopicToOdomTrajectoryTopic) {
+  this->SetupController();
+
+  // Start turning axis trajectory topic
+  this->StartRollTrajectoryTopic();
+
+  // Interrupt with cart trajectory topic
+  this->PreemptOdomTrajectoryTopic();
+}
+
+/// Test of cart control method switching (from turning axis trajectory topic to cart trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryTopicToOdomTrajectoryAction) {
+  this->SetupController();
+
+  // Start turning axis trajectory topic
+  this->StartRollTrajectoryTopic();
+
+  // Interrupt with cart trajectory action
+  this->PreemptOdomTrajectoryAction();
+}
+
+/// Test of cart control method switching (from turning axis trajectory topic to turning axis trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryTopicToRollTrajectoryAction) {
+  this->SetupController();
+
+  // Start turning axis trajectory topic
+  this->StartRollTrajectoryTopic();
+
+  // Interrupt with turning axis trajectory action
+  this->PreemptRollTrajectoryAction();
+}
+
+/// Test of cart control method switching (from turning axis trajectory action to cart speed command topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryActionToOdomVelocityTopic) {
+  this->SetupController();
+
+  // Start turning axis trajectory action
+  auto goal_handle = this->StartRollTrajectoryAction();
+
+  // Send speed command topic
+  this->PreemptCmdVelTopic();
+
+  // Speed command is ignored, cart position does not move, and moves along the turning axis position trajectory
+  auto base_state = this->joint_state_counter_->last_msg();
+  ASSERT_EQ(base_state.actual.positions.size(), 3);
+  EXPECT_NEAR(base_state.actual.positions[0], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[1], 0.0, kEpsilon);
+  EXPECT_NEAR(base_state.actual.positions[2], 1.0, kEpsilon);
+
+  // Action succeeds
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_SUCCEEDED));
+}
+
+/// Test of cart control method switching (from turning axis trajectory action to cart trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryActionToOdomTrajectoryTopic) {
+  this->SetupController();
+
+  // Start turning axis trajectory action
+  auto goal_handle = this->StartRollTrajectoryAction();
+
+  // Interrupt with cart trajectory topic
+  this->PreemptOdomTrajectoryTopic();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Test of cart control method switching (from turning axis trajectory action to cart trajectory action)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryActionToOdomTrajectoryAction) {
+  this->SetupController();
+
+  // Start turning axis trajectory action
+  auto goal_handle = this->StartRollTrajectoryAction();
+
+  // Interrupt with cart trajectory action
+  this->PreemptOdomTrajectoryAction();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
+}
+
+/// Test of cart control method switching (from turning axis trajectory action to turning axis trajectory topic)
+TYPED_TEST(OmniBaseControllerTest, ChangeControlMethodRollTrajectoryActionToRollTrajectoryTopic) {
+  this->SetupController();
+
+  // Start turning axis trajectory action
+  auto goal_handle = this->StartRollTrajectoryAction();
+
+  // Interrupt with cart trajectory action
+  this->PreemptRollTrajectoryTopic();
+
+  EXPECT_TRUE(this->template WaitForStatus<ActionType>(
+      goal_handle, action_msgs::msg::GoalStatus::STATUS_CANCELED));
 }
 
 }  // namespace hsrb_base_controllers

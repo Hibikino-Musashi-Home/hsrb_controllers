@@ -25,7 +25,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test of the controller state
+/// @brief Test of controller state
 
 #include <gtest/gtest.h>
 
@@ -39,7 +39,7 @@ namespace {
 
 namespace hsrb_gripper_controller {
 
-// Correctly published with StatePublisher
+// Correctly published by StatePublisher
 TEST(DistancePublisherTest, Publish) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();
@@ -67,7 +67,7 @@ TEST(DistancePublisherTest, Publish) {
   EXPECT_NEAR(msg.data, 0.122194, kEpsilon);
 }
 
-// Correctly published with StatePublisher
+// Correctly published by StatePublisher
 TEST(DistancePublisherTest, PublishRate) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();

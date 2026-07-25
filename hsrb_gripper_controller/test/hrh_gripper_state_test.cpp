@@ -25,7 +25,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-/// @brief Test of the controller state
+/// @brief Test of controller state
 
 #include <gtest/gtest.h>
 
@@ -105,7 +105,7 @@ TEST(StatePublisherTest, Publish) {
   CheckStateMsg(counter->last_msg(), check_reference, check_feedback, check_error, { "joint_1" });
 }
 
-// Publication period can be changed with state_publish_rate
+// The publication cycle can be changed with state_publish_rate
 TEST(StatePublisherTest, PublishRate) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();
@@ -131,7 +131,7 @@ TEST(StatePublisherTest, PublishRate) {
   EXPECT_EQ(counter->count(), 5);
 }
 
-// Does not compute error if the sizes of reference and feedback differ
+// No error is calculated if the sizes of reference and feedback are different
 TEST(StatePublisherTest, ErrorSizeMismatch) {
   auto node = rclcpp_lifecycle::LifecycleNode::make_shared("test_node");
   node->configure();

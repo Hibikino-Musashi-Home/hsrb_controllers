@@ -2,6 +2,20 @@
 Changelog for package hsrb_diagnostic_broadcaster
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+2.4.0 (2025-12-04)
+-------------------
+* Refactor ternary search functions into a single templated version using std::less.
+* Add joint velocity constraints considering joint accelerations.
+* Separate output and desired velocities
+* Change VelocityLimit to Vector3d and simplify processing.
+* Fix search conditions for CommandInterface.
+* Enabled specification of command_joints to support chainable controllers.
+* Replace each package's GetRobotDescription with tmc_utils::ResolveRobotDescription.
+* Add base roll control command
+* Add namespace parameter
+* Add controller state topic
+* Contributors: Keisuke Takeshita, Shigeo Tsuduki, Yuki Hidaka
+
 2.2.0 (2025-04-22)
 -------------------
 * Fix hsrb_diag to be available in hsre4p

@@ -62,49 +62,49 @@ class HrhGripperFollowDistanceTrajectoryAction
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
   /// Check if the goal is acceptable
   bool ValidateGoal(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
-  /// Update the action goal
+  /// Update the action's target
   void UpdateActionImpl(const control_msgs::action::FollowJointTrajectory::Goal& goal) override;
 
-  /// Callback when opening width trajectory command arrives via topic
+  /// Callback when the opening width trajectory command is received via topic
   /// @param [in] msg Trajectory
   void DistanceTrajectoryCommandCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
 
-  /// Create trajectory with limited upper and lower bounds
+  /// Create a trajectory with limited upper and lower bounds
   /// @param [in] msg Opening Width Trajectory
   void LimitTrajectory(const trajectory_msgs::msg::JointTrajectory& distance_trajectory);
 
-  /// Success determination
-  /// @param [in] time             Current time
-  /// @param [in] current_distance Current opening width
+  /// Success Determination
+  /// @param [in] time Current Time
+  /// @param [in] current_distance Current Opening Width
   void CheckForSuccess(const rclcpp::Time& time, const double current_distance);
 
-  /// Default goal position allowable error [m]
+  /// Default allowable error for goal position [m]
   double default_goal_tolerance_;
-  /// Default allowable error of the time to reach the goal [s]
+  /// Default allowable error for goal arrival time [s]
   double default_goal_time_tolerance_;
-  // Maximum opening width [m]
+  // Maximum Opening Width [m]
   double distance_max_;
-  // Minimum opening width [m]
+  // Minimum Opening Width [m]
   double distance_min_;
 
-  // Whether to connect from existing desired when new trajectory arrives
+  // Whether to connect from the existing desired when a new trajectory arrives
   // Variable names and behavior are aligned with JointTrajectoryController
   bool open_loop_control_;
   // Last sampled state
   rclcpp::Time last_sampled_time_;
   std::optional<trajectory_msgs::msg::JointTrajectoryPoint> last_command_state_;
-  /// Trajectory command reception
+  /// Trajectory Command Reception
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr distance_trajectory_command_sub_;
 
-  /// Fingertip distance calculator
+  /// Fingertip Distance Calculator
   HrhGripperDistanceCalculator::Ptr distance_calculator_;
 
-  /// Hold trajectory
+  /// Hold the Trajectory
   std::shared_ptr<joint_trajectory_controller::Trajectory>* trajectory_active_ptr_;
   std::shared_ptr<joint_trajectory_controller::Trajectory> trajectory_ptr_;
   realtime_tools::RealtimeBuffer<trajectory_msgs::msg::JointTrajectory::SharedPtr> trajectory_msg_buffer_;
 
-  /// Goal condition buffer
+  /// Goal Condition Buffer
   realtime_tools::RealtimeBuffer<GoalCondition> goal_condition_buffer_;
 };
 

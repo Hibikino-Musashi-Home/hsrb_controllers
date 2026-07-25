@@ -89,6 +89,7 @@ class CommandTrajectorySubscriber : public CommandSubscriber {
   using Ptr = std::shared_ptr<CommandTrajectorySubscriber>;
 
   CommandTrajectorySubscriber(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
+                              const std::string& topic_name,
                               IControllerCommandInterface* controller);
   virtual ~CommandTrajectorySubscriber() {}
 
@@ -103,7 +104,7 @@ class CommandTrajectorySubscriber : public CommandSubscriber {
 
 /// Input trajectory action command class
 // TODO(Takeshita) toleranceの扱い周りがros1の頃より劣化しているので要検討
-//                 The reason is because it is aligned with the implementation of follow_trajectory_controller
+//                 The reason is that it is based on the implementation of follow_trajectory_controller
 //                 Not using velocity, ignoring the action goal's tolerance
 class TrajectoryActionServer : public CommandSubscriber {
  public:
@@ -111,14 +112,15 @@ class TrajectoryActionServer : public CommandSubscriber {
 
   TrajectoryActionServer(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node,
                          const std::vector<std::string>& cordinates,
+                         const std::string& server_name,
                          IControllerCommandInterface* controller);
   virtual ~TrajectoryActionServer() {}
 
   // Update the result of the action
   void UpdateActionResult(int32_t error_code);
   // Issue feedback
-  void SetFeedback(const ControllerBaseState& state, const rclcpp::Time& stamp);
-  // Clear the currently following goal
+  void SetFeedback(const ControllerState& state, const rclcpp::Time& stamp);
+  // Clear the currently followed goal
   void PreemptActiveGoal();
 
  private:
@@ -142,7 +144,7 @@ class TrajectoryActionServer : public CommandSubscriber {
   rclcpp_action::CancelResponse CancelCallback(const ServerGoalHandlePtr goal_handle);
   void FeedbackSetupCallback(ServerGoalHandlePtr goal_handle);
 
-  // Timer for executing action
+  // Timer during action execution
   rclcpp::TimerBase::SharedPtr goal_handle_timer_;
 };
 

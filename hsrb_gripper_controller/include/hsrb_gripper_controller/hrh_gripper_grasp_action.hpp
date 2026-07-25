@@ -56,7 +56,7 @@ class HrhGripperGraspAction : public HrhGripperAction<tmc_control_msgs::action::
  protected:
   /// Implementation of action initialization
   bool InitImpl(const rclcpp_lifecycle::LifecycleNode::SharedPtr& node) override;
-  /// Update the action's target
+  /// Update the action target
   void UpdateActionImpl(const tmc_control_msgs::action::GripperApplyEffort::Goal& goal) override;
 
   /// Command value and state

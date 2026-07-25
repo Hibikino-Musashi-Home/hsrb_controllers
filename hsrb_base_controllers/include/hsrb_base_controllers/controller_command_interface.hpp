@@ -31,7 +31,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 /// @file controller_command_interface.hpp
-/// @brief Interface class to connect command values from the controller and ROS
+/// @brief Interface class that connects controller and command values from ROS
 #ifndef HSRB_BASE_CONTROLLERS_CONTROLLER_COMMAND_INTERFACE_HPP_
 #define HSRB_BASE_CONTROLLERS_CONTROLLER_COMMAND_INTERFACE_HPP_
 
@@ -49,22 +49,24 @@ class IControllerCommandInterface {
 
   virtual ~IControllerCommandInterface() = default;
 
-  // Returns whether commands can be accepted
+  // Returns whether the command can be accepted
   virtual bool IsAcceptable() = 0;
 
-  // Set the input speed command
+  // Set input speed command
   virtual void UpdateVelocity(const geometry_msgs::msg::Twist::SharedPtr& msg) = 0;
 
-  // Validate the input trajectory command
+  // Validate input trajectory command
   virtual bool ValidateTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory) = 0;
-  // Set the input trajectory command
+  // Set input trajectory command
   virtual void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory) = 0;
   // // TODO(Takeshita) アクションのgoalに含まれるtolerancesを扱うための関数を追加する
   // // Set input trajectory command and tolerances
   // virtual void UpdateTrajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr& trajectory,
   //                               const joint_trajectory_controller::SegmentTolerances& tolerances) = 0;
-  // Reset the input trajectory
+  // Reset input trajectory
   virtual void ResetTrajectory() = 0;
+  // Interrupt the currently executing goal
+  virtual void PreemptActiveGoal() = 0;
 };
 
 }  // namespace hsrb_base_controllers
